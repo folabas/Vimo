@@ -1,12 +1,6 @@
 import React, { createContext, useState, useContext, ReactNode } from 'react';
-
-interface Movie {
-  id: string;
-  title: string;
-  source: string;
-  thumbnail?: string;
-  duration?: number | string;
-}
+import { createRoom as apiCreateRoom, joinRoom as apiJoinRoom, leaveRoom as apiLeaveRoom, Movie } from '../services/api/roomService';
+import { socketService, SocketEvents } from '../services/api/socketService';
 
 interface RoomState {
   roomCode: string | null;
@@ -24,7 +18,7 @@ interface RoomContextType {
   setRoomCode: (code: string | null) => void;
   setIsHost: (isHost: boolean) => void;
   setSelectedMovie: (movie: Movie | null) => void;
-  setParticipants: (participants: string[]) => void;
+  setParticipants: (participants: string[] | ((prev: string[]) => string[])) => void;
   setSubtitlesEnabled: (enabled: boolean) => void;
   setIsPrivate: (isPrivate: boolean) => void;
   setCurrentTime: (time: number) => void;
@@ -62,8 +56,8 @@ export const RoomProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setRoomState(prev => ({ ...prev, selectedMovie: movie }));
   };
 
-  const setParticipants = (participants: string[]) => {
-    setRoomState(prev => ({ ...prev, participants }));
+  const setParticipants = (participants: string[] | ((prev: string[]) => string[])) => {
+    setRoomState(prev => ({ ...prev, participants: typeof participants === 'function' ? participants(prev.participants) : participants }));
   };
 
   const setSubtitlesEnabled = (enabled: boolean) => {
@@ -82,54 +76,132 @@ export const RoomProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setRoomState(prev => ({ ...prev, isPlaying }));
   };
 
-  // Mock implementation - would connect to backend in real app
+  // Real implementation using API service
   const createRoom = async (
     movie: Movie, 
     isPrivate: boolean, 
     subtitlesEnabled: boolean
   ): Promise<string> => {
-    // Generate a random room code (in real app this would come from the server)
-    const roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-    
-    setRoomState({
-      roomCode,
-      isHost: true,
-      selectedMovie: movie,
-      participants: ['You'],
-      subtitlesEnabled,
-      isPrivate,
-      currentTime: 0,
-      isPlaying: false,
-    });
-    
-    return roomCode;
+    try {
+      const response = await apiCreateRoom(movie, isPrivate, subtitlesEnabled);
+      
+      setRoomState({
+        roomCode: response.roomCode,
+        isHost: true,
+        selectedMovie: movie,
+        participants: ['You'], // Will be updated by socket events
+        subtitlesEnabled,
+        isPrivate,
+        currentTime: 0,
+        isPlaying: false,
+      });
+      
+      // Connect to socket room
+      socketService.initialize();
+      socketService.joinRoom(response.roomCode);
+      
+      // Listen for socket events
+      setupSocketListeners(response.roomCode);
+      
+      return response.roomCode;
+    } catch (error) {
+      console.error('Error creating room:', error);
+      throw error;
+    }
   };
 
-  // Mock implementation - would connect to backend in real app
+  // Real implementation using API service
   const joinRoom = async (roomCode: string): Promise<boolean> => {
-    // In a real app, this would verify the room exists on the server
-    // For now, we'll simulate a successful join
-    setRoomState({
-      roomCode,
-      isHost: false,
-      selectedMovie: {
-        id: 'sample-movie',
-        title: 'Sample Movie',
-        source: 'https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4',
-        thumbnail: 'https://sample-videos.com/img/Sample-jpg-image-50kb.jpg',
-      },
-      participants: ['Host', 'You'],
-      subtitlesEnabled: false,
-      isPrivate: false,
-      currentTime: 0,
-      isPlaying: false,
-    });
-    
-    return true;
+    try {
+      const response = await apiJoinRoom(roomCode);
+      
+      setRoomState({
+        roomCode: response.roomCode,
+        isHost: response.isHost,
+        selectedMovie: response.movie,
+        participants: ['Host', 'You'], // Will be updated by socket events
+        subtitlesEnabled: response.subtitlesEnabled,
+        isPrivate: response.isPrivate,
+        currentTime: response.currentTime,
+        isPlaying: response.isPlaying,
+      });
+      
+      // Connect to socket room
+      socketService.initialize();
+      socketService.joinRoom(roomCode);
+      
+      // Listen for socket events
+      setupSocketListeners(roomCode);
+      
+      return true;
+    } catch (error) {
+      console.error('Error joining room:', error);
+      return false;
+    }
   };
 
-  const leaveRoom = () => {
-    setRoomState(initialRoomState);
+  const leaveRoom = async () => {
+    try {
+      if (roomState.roomCode) {
+        // Leave socket room
+        socketService.leaveRoom(roomState.roomCode);
+        
+        // Call API to leave room
+        await apiLeaveRoom(roomState.roomCode);
+      }
+      
+      // Remove socket listeners
+      removeSocketListeners();
+      
+      // Reset room state
+      setRoomState(initialRoomState);
+    } catch (error) {
+      console.error('Error leaving room:', error);
+      // Reset room state anyway
+      setRoomState(initialRoomState);
+    }
+  };
+
+  // Setup socket event listeners
+  const setupSocketListeners = (roomCode: string) => {
+    // Video playback events
+    socketService.on(SocketEvents.VIDEO_PLAYED, (data: any) => {
+      setIsPlaying(true);
+      setCurrentTime(data.currentTime);
+    });
+    
+    socketService.on(SocketEvents.VIDEO_PAUSED, (data: any) => {
+      setIsPlaying(false);
+      setCurrentTime(data.currentTime);
+    });
+    
+    socketService.on(SocketEvents.VIDEO_SEEKED, (data: any) => {
+      setCurrentTime(data.currentTime);
+    });
+    
+    // Subtitle events
+    socketService.on(SocketEvents.SUBTITLES_TOGGLED, (data: any) => {
+      setSubtitlesEnabled(data.enabled);
+    });
+    
+    // Participant events
+    socketService.on(SocketEvents.PARTICIPANT_JOINED, (data: any) => {
+      setParticipants((prev: string[]) => [...prev, data.username]);
+    });
+    
+    socketService.on(SocketEvents.PARTICIPANT_LEFT, (data: any) => {
+      setParticipants((prev: string[]) => prev.filter((username: string) => username !== data.username));
+    });
+  };
+
+  // Remove socket event listeners
+  const removeSocketListeners = () => {
+    socketService.off(SocketEvents.VIDEO_PLAYED, () => {});
+    socketService.off(SocketEvents.VIDEO_PAUSED, () => {});
+    socketService.off(SocketEvents.VIDEO_SEEKED, () => {});
+    socketService.off(SocketEvents.SUBTITLES_TOGGLED, () => {});
+    socketService.off(SocketEvents.PARTICIPANT_JOINED, () => {});
+    socketService.off(SocketEvents.PARTICIPANT_LEFT, () => {});
   };
 
   return (
