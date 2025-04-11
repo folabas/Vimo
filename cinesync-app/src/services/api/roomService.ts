@@ -22,11 +22,32 @@ export interface Room {
   createdAt: string;
 }
 
+// Room state interface for socket updates
+export interface RoomState {
+  roomCode: string;
+  selectedMovie: Movie;
+  isPrivate: boolean;
+  subtitlesEnabled: boolean;
+  isPlaying: boolean;
+  currentTime: number;
+  participants: Participant[];
+  isHost: boolean;
+}
+
 // Participant interface
 export interface Participant {
   userId: string;
   username: string;
+  name: string; // Display name
   joinedAt: string;
+}
+
+// Message interface for chat
+export interface Message {
+  id: string;
+  sender: string;
+  content: string;
+  timestamp: Date;
 }
 
 // Create room response

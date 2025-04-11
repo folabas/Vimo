@@ -1,6 +1,7 @@
 import React from 'react';
 import styled from '@emotion/styled';
 import { theme } from '../styles/theme';
+import { colors } from '../styles/colors';
 
 interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label?: string;
@@ -19,7 +20,7 @@ const InputContainer = styled.div<{ fullWidth?: boolean }>`
 const InputLabel = styled.label`
   font-size: ${theme.typography.sizes.sm};
   margin-bottom: ${theme.spacing.xs};
-  color: ${theme.colors.textSecondary};
+  color: ${colors.textSecondary};
 `;
 
 const InputWrapper = styled.div`
@@ -33,15 +34,15 @@ const StyledInput = styled.input<{ hasError?: boolean; hasIcon?: boolean }>`
   padding: ${theme.spacing.sm} ${theme.spacing.md};
   padding-left: ${props => props.hasIcon ? '2.5rem' : theme.spacing.md};
   font-size: ${theme.typography.sizes.md};
-  background-color: ${theme.colors.backgroundLight};
-  color: ${theme.colors.text};
-  border: 1px solid ${props => props.hasError ? theme.colors.error : 'transparent'};
+  background-color: ${colors.backgroundLight};
+  color: ${colors.text};
+  border: 1px solid ${props => props.hasError ? colors.error : colors.border};
   border-radius: ${theme.borderRadius.md};
   transition: all ${theme.transitions.fast};
   
   &:focus {
     outline: none;
-    border-color: ${props => props.hasError ? theme.colors.error : theme.colors.primary};
+    border-color: ${props => props.hasError ? colors.error : colors.primary};
     box-shadow: 0 0 0 2px ${props => props.hasError 
       ? `rgba(231, 76, 60, 0.2)` 
       : `rgba(231, 76, 60, 0.2)`};
@@ -60,7 +61,7 @@ const StyledInput = styled.input<{ hasError?: boolean; hasIcon?: boolean }>`
 const IconWrapper = styled.div`
   position: absolute;
   left: ${theme.spacing.sm};
-  color: ${theme.colors.textSecondary};
+  color: ${colors.textSecondary};
   display: flex;
   align-items: center;
   justify-content: center;
@@ -72,7 +73,7 @@ const IconWrapper = styled.div`
 `;
 
 const ErrorMessage = styled.div`
-  color: ${theme.colors.error};
+  color: ${colors.error};
   font-size: ${theme.typography.sizes.sm};
   margin-top: ${theme.spacing.xs};
 `;

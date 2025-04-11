@@ -100,8 +100,9 @@ export const RoomProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       socketService.initialize();
       socketService.joinRoom(response.roomCode);
       
-      // Listen for socket events
-      setupSocketListeners(response.roomCode);
+      // Listen for socket events and store callbacks
+      const callbacks = setupSocketListeners(response.roomCode);
+      setEventCallbacks(callbacks);
       
       return response.roomCode;
     } catch (error) {
@@ -113,25 +114,22 @@ export const RoomProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // Real implementation using API service
   const joinRoom = async (roomCode: string): Promise<boolean> => {
     try {
-      const response = await apiJoinRoom(roomCode);
+      // Call API to join room
+      const success = await apiJoinRoom(roomCode);
       
-      setRoomState({
-        roomCode: response.roomCode,
-        isHost: response.isHost,
-        selectedMovie: response.movie,
-        participants: ['Host', 'You'], // Will be updated by socket events
-        subtitlesEnabled: response.subtitlesEnabled,
-        isPrivate: response.isPrivate,
-        currentTime: response.currentTime,
-        isPlaying: response.isPlaying,
-      });
+      if (!success) {
+        return false;
+      }
       
-      // Connect to socket room
-      socketService.initialize();
+      // Update room state
+      setRoomCode(roomCode);
+      
+      // Join socket room
       socketService.joinRoom(roomCode);
       
-      // Listen for socket events
-      setupSocketListeners(roomCode);
+      // Listen for socket events and store callbacks
+      const callbacks = setupSocketListeners(roomCode);
+      setEventCallbacks(callbacks);
       
       return true;
     } catch (error) {
@@ -162,46 +160,73 @@ export const RoomProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+  // Store event listener callbacks
+  const [eventCallbacks, setEventCallbacks] = useState<any>(null);
+
   // Setup socket event listeners
   const setupSocketListeners = (roomCode: string) => {
-    // Video playback events
-    socketService.on(SocketEvents.VIDEO_PLAYED, (data: any) => {
+    // Store callback references so we can remove them later
+    const videoPlayedCallback = (data: any) => {
       setIsPlaying(true);
       setCurrentTime(data.currentTime);
-    });
+    };
     
-    socketService.on(SocketEvents.VIDEO_PAUSED, (data: any) => {
+    const videoPausedCallback = (data: any) => {
       setIsPlaying(false);
       setCurrentTime(data.currentTime);
-    });
+    };
     
-    socketService.on(SocketEvents.VIDEO_SEEKED, (data: any) => {
+    const videoSeekedCallback = (data: any) => {
       setCurrentTime(data.currentTime);
-    });
+    };
     
-    // Subtitle events
-    socketService.on(SocketEvents.SUBTITLES_TOGGLED, (data: any) => {
+    const subtitlesToggleCallback = (data: any) => {
       setSubtitlesEnabled(data.enabled);
-    });
+    };
     
-    // Participant events
-    socketService.on(SocketEvents.PARTICIPANT_JOINED, (data: any) => {
+    const participantJoinedCallback = (data: any) => {
       setParticipants((prev: string[]) => [...prev, data.username]);
-    });
+    };
     
-    socketService.on(SocketEvents.PARTICIPANT_LEFT, (data: any) => {
+    const participantLeftCallback = (data: any) => {
       setParticipants((prev: string[]) => prev.filter((username: string) => username !== data.username));
-    });
+    };
+
+    // Register event listeners
+    socketService.on(SocketEvents.VIDEO_PLAYED, videoPlayedCallback);
+    socketService.on(SocketEvents.VIDEO_PAUSED, videoPausedCallback);
+    socketService.on(SocketEvents.VIDEO_SEEKED, videoSeekedCallback);
+    socketService.on(SocketEvents.SUBTITLES_TOGGLED, subtitlesToggleCallback);
+    socketService.on(SocketEvents.PARTICIPANT_JOINED, participantJoinedCallback);
+    socketService.on(SocketEvents.PARTICIPANT_LEFT, participantLeftCallback);
+    
+    // Store callbacks for cleanup
+    const callbacks = {
+      videoPlayed: videoPlayedCallback,
+      videoPaused: videoPausedCallback,
+      videoSeeked: videoSeekedCallback,
+      subtitlesToggled: subtitlesToggleCallback,
+      participantJoined: participantJoinedCallback,
+      participantLeft: participantLeftCallback
+    };
+    
+    // Return callbacks for cleanup
+    return callbacks;
   };
 
   // Remove socket event listeners
   const removeSocketListeners = () => {
-    socketService.off(SocketEvents.VIDEO_PLAYED, () => {});
-    socketService.off(SocketEvents.VIDEO_PAUSED, () => {});
-    socketService.off(SocketEvents.VIDEO_SEEKED, () => {});
-    socketService.off(SocketEvents.SUBTITLES_TOGGLED, () => {});
-    socketService.off(SocketEvents.PARTICIPANT_JOINED, () => {});
-    socketService.off(SocketEvents.PARTICIPANT_LEFT, () => {});
+    if (!eventCallbacks) return;
+    
+    socketService.off(SocketEvents.VIDEO_PLAYED, eventCallbacks.videoPlayed);
+    socketService.off(SocketEvents.VIDEO_PAUSED, eventCallbacks.videoPaused);
+    socketService.off(SocketEvents.VIDEO_SEEKED, eventCallbacks.videoSeeked);
+    socketService.off(SocketEvents.SUBTITLES_TOGGLED, eventCallbacks.subtitlesToggled);
+    socketService.off(SocketEvents.PARTICIPANT_JOINED, eventCallbacks.participantJoined);
+    socketService.off(SocketEvents.PARTICIPANT_LEFT, eventCallbacks.participantLeft);
+    
+    // Clear callbacks
+    setEventCallbacks(null);
   };
 
   return (

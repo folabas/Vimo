@@ -1,0 +1,20 @@
+// Color palette for the application
+export const colors = {
+  primary: '#e74c3c',
+  primaryDark: '#c0392b',
+  secondary: '#2c3e50',
+  background: '#1a1e26',
+  backgroundDark: '#141820',
+  backgroundLight: '#2a2f3a',
+  cardBackground: '#2a2f3a',
+  text: '#ffffff',
+  textSecondary: '#b3b3b3',
+  textMuted: '#8a8a8a',
+  border: '#3d4351',
+  inputBackground: '#242830',
+  success: '#2ecc71',
+  error: '#e74c3c',
+  errorLight: 'rgba(231, 76, 60, 0.1)',
+  warning: '#f39c12',
+  info: '#3498db',
+};

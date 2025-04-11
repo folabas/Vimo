@@ -1,16 +1,7 @@
+import { colors } from './colors';
+
 export const theme = {
-  colors: {
-    primary: '#e74c3c',
-    secondary: '#2c3e50',
-    background: '#1a1e26',
-    backgroundLight: '#2a2f3a',
-    text: '#ffffff',
-    textSecondary: '#b3b3b3',
-    success: '#2ecc71',
-    error: '#e74c3c',
-    warning: '#f39c12',
-    info: '#3498db',
-  },
+  colors,
   typography: {
     fontFamily: "'Inter', 'Roboto', sans-serif",
     heading: {

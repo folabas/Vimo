@@ -17,7 +17,6 @@ function initializeSocket(server) {
     }
   });
 
-  // Middleware to authenticate socket connections
   io.use(async (socket, next) => {
     try {
       const token = socket.handshake.auth.token;
@@ -33,7 +32,6 @@ function initializeSocket(server) {
         return next(new Error('User not found'));
       }
       
-      // Attach user to socket
       socket.user = {
         id: user._id,
         username: user.username,
@@ -55,39 +53,72 @@ function initializeSocket(server) {
     // Join a room
     socket.on('join-room', async ({ roomCode }) => {
       try {
-        // Find room by code
-        const room = await Room.findOne({ roomCode });
+        if (!socket.user) {
+          socket.emit('error', { message: 'Not authenticated' });
+          return;
+        }
         
+        const room = await Room.findOne({ roomCode });
         if (!room) {
           socket.emit('error', { message: 'Room not found' });
           return;
         }
         
-        // Join socket room
         socket.join(roomCode);
         
-        // Notify other users
-        socket.to(roomCode).emit('participant-joined', {
-          userId: socket.user.id,
-          username: socket.user.username,
-          profilePicture: socket.user.profilePicture
+        const isParticipant = room.participants.some(p => 
+          p.userId.toString() === socket.user.id.toString()
+        );
+        
+        if (!isParticipant) {
+          room.participants.push({
+            userId: socket.user.id,
+            username: socket.user.username
+          });
+          await room.save();
+        }
+        
+        room.participants.forEach(p => {
+          p.profilePicture = socket.user.profilePicture;
         });
         
-        // Send room status to the user
+        let movieData = null;
+        if (room.movie) {
+          movieData = {
+            id: room.movie.id || '',
+            title: room.movie.title || '',
+            source: room.movie.source || '',
+            videoUrl: room.movie.source || '',
+            thumbnail: room.movie.thumbnail || '',
+            duration: room.movie.duration || '0:00'
+          };
+        }
+        
         socket.emit('room-joined', {
           roomCode: room.roomCode,
-          movie: room.movie,
+          selectedMovie: movieData, 
           isPrivate: room.isPrivate,
           subtitlesEnabled: room.subtitlesEnabled,
           isPlaying: room.isPlaying,
           currentTime: room.currentTime,
+          participants: room.participants.map(p => ({
+            id: p.userId.toString(),
+            username: p.username,
+            profilePicture: p.profilePicture
+          })),
           isHost: room.hostId.toString() === socket.user.id.toString(),
-          participants: room.participants
+          expiration: room.expiresAt
+        });
+        
+        io.to(roomCode).emit('participant-joined', {
+          id: socket.user.id,
+          username: socket.user.username,
+          profilePicture: socket.user.profilePicture
         });
         
         console.log(`${socket.user.username} joined room ${roomCode}`);
       } catch (error) {
-        console.error('Join room error:', error);
+        console.error('Error joining room:', error);
         socket.emit('error', { message: 'Failed to join room' });
       }
     });
@@ -216,6 +247,97 @@ function initializeSocket(server) {
       }
     });
     
+    // Select video - supporting both kebab-case and UPPER_CASE versions for compatibility
+    socket.on('select-video', handleSelectVideo);
+    socket.on('SELECT_VIDEO', handleSelectVideo);
+    
+    // Handler function for selecting videos
+    async function handleSelectVideo(movie) {
+      try {
+        // Get the room code from the socket's rooms
+        const rooms = Array.from(socket.rooms);
+        const roomCode = rooms.find(room => room !== socket.id);
+        
+        if (!roomCode) {
+          socket.emit('error', { message: 'You are not in any room' });
+          return;
+        }
+        
+        // Ensure we have a source field - prioritize source, then videoUrl
+        const sourceUrl = movie.source || movie.videoUrl || '';
+        
+        console.log(`[SELECT VIDEO] ${socket.user.username} selected video in room ${roomCode}:`, {
+          id: movie.id,
+          title: movie.title,
+          source: sourceUrl,
+          hasSource: !!sourceUrl
+        });
+        
+        // Ensure the source field is set
+        const movieObject = {
+          id: movie.id || `movie-${Date.now()}`,
+          title: movie.title || 'Untitled',
+          source: sourceUrl,
+          videoUrl: sourceUrl, // Set both source and videoUrl for compatibility
+          thumbnail: movie.thumbnail || '',
+          duration: movie.duration || '0:00'
+        };
+        
+        // Update room with the new movie
+        const updatedRoom = await Room.findOneAndUpdate(
+          { roomCode },
+          { 
+            movie: movieObject,
+            currentTime: 0,
+            isPlaying: false,
+            lastActivity: Date.now()
+          },
+          { new: true }
+        ).populate('participants.userId');
+        
+        if (!updatedRoom) {
+          socket.emit('error', { message: 'Room not found' });
+          return;
+        }
+        
+        // Extract room state for broadcasting
+        const roomState = {
+          roomCode: updatedRoom.roomCode,
+          selectedMovie: {
+            id: updatedRoom.movie.id,
+            title: updatedRoom.movie.title,
+            source: updatedRoom.movie.source,
+            videoUrl: updatedRoom.movie.source, // Include both for compatibility
+            thumbnail: updatedRoom.movie.thumbnail,
+            duration: updatedRoom.movie.duration
+          },
+          isPlaying: updatedRoom.isPlaying,
+          currentTime: updatedRoom.currentTime,
+          subtitlesEnabled: updatedRoom.subtitlesEnabled,
+          participants: updatedRoom.participants.map(p => ({
+            userId: p.userId._id,
+            username: p.userId.username,
+            profilePicture: p.userId.profilePicture
+          }))
+        };
+        
+        // Log what's being emitted for debugging
+        console.log('[SELECT VIDEO] Broadcasting updated room state with movie:', {
+          title: roomState.selectedMovie.title,
+          source: roomState.selectedMovie.source,
+          hasSource: !!roomState.selectedMovie.source
+        });
+        
+        // Broadcast the updated room state to all users in the room
+        io.to(roomCode).emit('room-state-update', roomState);
+        
+        console.log(`Room state updated with new video: ${movie.title}`);
+      } catch (error) {
+        console.error('Select video error:', error);
+        socket.emit('error', { message: 'Failed to select video' });
+      }
+    }
+    
     // Send chat message
     socket.on('send-message', async ({ roomCode, message }) => {
       try {
@@ -250,6 +372,78 @@ function initializeSocket(server) {
       } catch (error) {
         console.error('Send reaction error:', error);
         socket.emit('error', { message: 'Failed to send reaction' });
+      }
+    });
+    
+    // Handle room-state-update event
+    socket.on('room-state-update', async (data) => {
+      try {
+        const rooms = Array.from(socket.rooms);
+        const roomCode = rooms.find(room => room !== socket.id);
+
+        if (!roomCode) {
+          socket.emit('error', { message: 'You are not in any room' });
+          return;
+        }
+
+        const room = await Room.findOne({ roomCode });
+        if (!room) {
+          socket.emit('error', { message: 'Room not found' });
+          return;
+        }
+
+        const { currentTime, isPlaying, subtitlesEnabled } = data;
+
+        let updatedSelectedMovie = null;
+        if (data.selectedMovie) {
+          updatedSelectedMovie = {
+            id: data.selectedMovie.id || room.movie?.id || '',
+            title: data.selectedMovie.title || room.movie?.title || '',
+            source: data.selectedMovie.source || data.selectedMovie.videoUrl || room.movie?.source || '',
+            videoUrl: data.selectedMovie.source || data.selectedMovie.videoUrl || room.movie?.source || '',
+            thumbnail: data.selectedMovie.thumbnail || room.movie?.thumbnail || '',
+            duration: data.selectedMovie.duration || room.movie?.duration || '0:00'
+          };
+        } else if (room.movie) {
+          updatedSelectedMovie = {
+            id: room.movie.id || '',
+            title: room.movie.title || '',
+            source: room.movie.source || '',
+            videoUrl: room.movie.source || '',
+            thumbnail: room.movie.thumbnail || '',
+            duration: room.movie.duration || '0:00'
+          };
+        }
+
+        const updatedRoom = await Room.findOneAndUpdate(
+          { roomCode },
+          {
+            isPlaying: isPlaying !== undefined ? isPlaying : room.isPlaying,
+            currentTime: currentTime !== undefined ? currentTime : room.currentTime,
+            subtitlesEnabled: subtitlesEnabled !== undefined ? subtitlesEnabled : room.subtitlesEnabled,
+            lastActivity: Date.now(),
+            movie: updatedSelectedMovie || room.movie
+          },
+          { new: true }
+        ).populate('participants.userId');
+
+        const roomState = {
+          roomCode: updatedRoom.roomCode,
+          selectedMovie: updatedSelectedMovie,
+          isPlaying: updatedRoom.isPlaying,
+          currentTime: updatedRoom.currentTime,
+          subtitlesEnabled: updatedRoom.subtitlesEnabled,
+          participants: updatedRoom.participants.map(p => ({
+            userId: p.userId._id,
+            username: p.userId.username,
+            profilePicture: p.userId.profilePicture
+          }))
+        };
+
+        io.to(roomCode).emit('room-state-updated', roomState);
+      } catch (error) {
+        console.error('Error updating room state:', error);
+        socket.emit('error', { message: 'Failed to update room state' });
       }
     });
     

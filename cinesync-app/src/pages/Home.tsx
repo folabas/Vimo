@@ -4,6 +4,8 @@ import styled from '@emotion/styled';
 import Logo from '../components/Logo';
 import Button from '../components/Button';
 import { theme } from '../styles/theme';
+import { useAuth } from '../context/AuthContext';
+import { colors } from '../styles/colors';
 
 const HomeContainer = styled.div`
   display: flex;
@@ -68,81 +70,137 @@ const OptionDescription = styled.p`
   margin-bottom: ${theme.spacing.lg};
 `;
 
-const Footer = styled.footer`
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
+const UserProfileSection = styled.div`
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: ${theme.spacing.md} ${theme.spacing.xl};
-  font-size: ${theme.typography.sizes.sm};
-  color: ${theme.colors.textSecondary};
+  background-color: ${colors.cardBackground};
+  border-radius: 12px;
+  margin: 1.5rem 0;
+  padding: 1.25rem;
+  width: 100%;
+  max-width: 500px;
 `;
 
-const FooterLinks = styled.div`
+const UserAvatar = styled.div`
+  width: 70px;
+  height: 70px;
+  border-radius: 50%;
+  background-color: ${colors.primary};
   display: flex;
-  gap: ${theme.spacing.md};
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  margin-right: 1.25rem;
+  
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
 `;
 
-const FooterLink = styled.a`
-  color: ${theme.colors.textSecondary};
-  text-decoration: none;
-  
-  &:hover {
-    color: ${theme.colors.text};
-  }
+const UserInitials = styled.div`
+  color: white;
+  font-size: 1.5rem;
+  font-weight: 600;
+`;
+
+const UserInfo = styled.div`
+  display: flex;
+  flex-direction: column;
+`;
+
+const UserName = styled.h2`
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 0 0 0.25rem;
+  color: ${colors.text};
+`;
+
+const UserSubtitle = styled.p`
+  font-size: 1rem;
+  color: ${colors.textSecondary};
+  margin: 0;
 `;
 
 const Home: React.FC = () => {
   const navigate = useNavigate();
+  const { isLoggedIn, user } = useAuth();
   
   return (
     <HomeContainer>
       <Logo size="large" />
-      <Tagline>Watch movies together, perfectly in sync.</Tagline>
+      <Tagline>Watch movies together, no matter where you are</Tagline>
       
-      <OptionsContainer>
-        <OptionCard>
-          <OptionIcon>
-            <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" />
-              <path d="M12 8V16M8 12H16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            </svg>
-          </OptionIcon>
-          <OptionTitle>Create a Room</OptionTitle>
-          <OptionDescription>Start a new watching session</OptionDescription>
-          <Button fullWidth onClick={() => navigate('/pick-movie')}>
-            Create a Room
-          </Button>
-        </OptionCard>
-        
-        <OptionCard>
-          <OptionIcon>
-            <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" />
-              <path d="M8 12H16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            </svg>
-          </OptionIcon>
-          <OptionTitle>Join a Room</OptionTitle>
-          <OptionDescription>Enter an existing room code</OptionDescription>
-          <Button fullWidth onClick={() => navigate('/join-room')}>
-            Join a Room
-          </Button>
-        </OptionCard>
-      </OptionsContainer>
-      
-      <Footer>
-        <FooterLinks>
-          <FooterLink href="#">Privacy Policy</FooterLink>
-          <span>•</span>
-          <FooterLink href="#">Terms of Service</FooterLink>
-        </FooterLinks>
-        <FooterLink href="https://github.com/yourusername/Vimo" target="_blank">
-          View on GitHub
-        </FooterLink>
-      </Footer>
+      {isLoggedIn ? (
+        <>
+          <UserProfileSection>
+            <UserAvatar>
+              {user?.profilePicture ? (
+                <img src={user.profilePicture} alt={user.username} />
+              ) : (
+                <UserInitials>
+                  {user?.username.substring(0, 2).toUpperCase()}
+                </UserInitials>
+              )}
+            </UserAvatar>
+            <UserInfo>
+              <UserName>Welcome, {user?.username}</UserName>
+              <UserSubtitle>Ready to watch a movie?</UserSubtitle>
+            </UserInfo>
+          </UserProfileSection>
+          
+          <OptionsContainer>
+            <OptionCard>
+              <OptionIcon>🎬</OptionIcon>
+              <OptionTitle>Create Room</OptionTitle>
+              <OptionDescription>
+                Pick a movie and create a new watch room
+              </OptionDescription>
+              <Button onClick={() => navigate('/pick-movie')}>
+                Create Room
+              </Button>
+            </OptionCard>
+            
+            <OptionCard>
+              <OptionIcon>🔗</OptionIcon>
+              <OptionTitle>Join Room</OptionTitle>
+              <OptionDescription>
+                Join an existing room with a room code
+              </OptionDescription>
+              <Button onClick={() => navigate('/join-room')}>
+                Join Room
+              </Button>
+            </OptionCard>
+          </OptionsContainer>
+        </>
+      ) : (
+        <>
+          <OptionsContainer>
+            <OptionCard>
+              <OptionIcon>🔑</OptionIcon>
+              <OptionTitle>Log In</OptionTitle>
+              <OptionDescription>
+                Already have an account? Log in to continue
+              </OptionDescription>
+              <Button onClick={() => navigate('/login')}>
+                Log In
+              </Button>
+            </OptionCard>
+            
+            <OptionCard>
+              <OptionIcon>✨</OptionIcon>
+              <OptionTitle>Sign Up</OptionTitle>
+              <OptionDescription>
+                New to Vimo? Create an account to get started
+              </OptionDescription>
+              <Button onClick={() => navigate('/signup')}>
+                Sign Up
+              </Button>
+            </OptionCard>
+          </OptionsContainer>
+        </>
+      )}
     </HomeContainer>
   );
 };

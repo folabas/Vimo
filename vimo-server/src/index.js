@@ -5,6 +5,8 @@ const mongoose = require('mongoose');
 const http = require('http');
 const authRoutes = require('./routes/auth.routes');
 const roomRoutes = require('./routes/room.routes');
+const videoRoutes = require('./routes/video.routes');
+const cloudinaryTestRoutes = require('./routes/cloudinary-test.routes');
 const initializeSocket = require('./socket');
 
 // Initialize Express app
@@ -24,6 +26,8 @@ app.use(express.json());
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/rooms', roomRoutes);
+app.use('/api/videos', videoRoutes);
+app.use('/api/cloudinary', cloudinaryTestRoutes);
 
 // Root route
 app.get('/', (req, res) => {
@@ -32,7 +36,10 @@ app.get('/', (req, res) => {
 
 // Connect to MongoDB
 if (process.env.MONGODB_URI) {
-  mongoose.connect(process.env.MONGODB_URI)
+  mongoose.connect(process.env.MONGODB_URI.replace('localhost', '127.0.0.1'), {
+    serverSelectionTimeoutMS: 5000,
+    family: 4 // Force IPv4
+  })
     .then(() => console.log('Connected to MongoDB'))
     .catch(err => console.error('MongoDB connection error:', err));
 }
