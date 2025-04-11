@@ -299,7 +299,10 @@ class SocketService {
    * @param callback - Callback function
    */
   onChatMessage(callback: (message: Message) => void): void {
-    this.on(SocketEvents.CHAT_MESSAGE_RECEIVED, callback);
+    this.on(SocketEvents.CHAT_MESSAGE_RECEIVED, (data: Message) => {
+        console.log('Chat message received from server:', data); // Debug log
+        callback(data);
+    });
   }
   
   /**

@@ -99,8 +99,8 @@ export const useWatchRoomSocket = ({
 
   const handleChatMessage = useCallback((message: Message) => {
     if (!isMountedRef.current || controllerRef.current.signal.aborted) return;
-    
-    console.log('Received chat message:', message);
+
+    console.log('Received chat message:', message); // Debug log
     setMessages((prev) => [...prev, message]);
   }, []);
 
@@ -234,6 +234,12 @@ export const useWatchRoomSocket = ({
 
     console.log(`Setting up socket for room: ${roomCode}`);
     setupRoom();
+
+    // Listen for chat messages
+    socketService.onChatMessage((message: Message) => {
+      console.log('Chat message received:', message); // Debug log
+      setMessages((prev) => [...prev, message]);
+    });
 
     return () => {
       console.log('Cleaning up socket connection');

@@ -96,15 +96,38 @@ const VideoSection = styled.div<{ isChatOpen: boolean }>`
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: ${theme.spacing.xl};
+  padding: ${theme.spacing['2xl']} ${theme.spacing.xl} ${theme.spacing.xl}; /* Increased top padding */
   overflow-y: ${({ isChatOpen }) => (isChatOpen ? 'auto' : 'hidden')};
+  ${({ isChatOpen }) =>
+    !isChatOpen &&
+    `
+    align-items: center;
+    justify-content: center;
+  `}
+  &::-webkit-scrollbar {
+    display: none; /* Hide vertical scroll indicator */
+  }
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
 `;
 
-const VideoContainer = styled.div`
+const VideoContainer = styled.div<{ isChatOpen: boolean }>`
   flex: 1;
-  padding: ${theme.spacing.xl};
   display: flex;
   flex-direction: column;
+  ${({ isChatOpen }) =>
+    !isChatOpen &&
+    `
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    max-height: none;
+  `}
+  &::-webkit-scrollbar {
+    display: none; /* Hide vertical scroll indicator */
+  }
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
 `;
 
 const MovieTitle = styled.h1`
@@ -359,7 +382,7 @@ const WatchRoom: React.FC<Props> = () => {
   const navigate = useNavigate();
   
   // UI state
-  const [isChatOpen, setIsChatOpen] = useState(true);
+  const [isChatOpen, setIsChatOpen] = useState(true); // Chat is always open
   const [showVideoLibrary, setShowVideoLibrary] = useState(false);
   const [localCurrentTime, setLocalCurrentTime] = useState(0);
   const [waitingTimeLeft, setWaitingTimeLeft] = useState(3600); // Default 1 hour in seconds
@@ -384,7 +407,6 @@ const WatchRoom: React.FC<Props> = () => {
     emitPause,
     emitTimeUpdate,
     emitSeek,
-    emitSelectVideo,
     emitToggleSubtitles,
     emitChatMessage,
     leaveRoom,
@@ -452,19 +474,19 @@ const WatchRoom: React.FC<Props> = () => {
   };
 
   // UI handlers
-  const handlePlay = () => {
+  const handlePlay = useCallback(() => {
     console.log('Video played');
     emitPlay(roomState.currentTime);
     setIsPlaying(true);
-  };
+  }, [emitPlay, roomState.currentTime, setIsPlaying]);
 
-  const handlePause = () => {
+  const handlePause = useCallback(() => {
     console.log('Video paused');
     emitPause(roomState.currentTime);
     setIsPlaying(false);
-  };
+  }, [emitPause, roomState.currentTime, setIsPlaying]);
 
-  const handleTimeUpdate = (time: number) => {
+  const handleTimeUpdate = useCallback((time: number) => {
     setLocalCurrentTime(time);
 
     // Only emit time updates if the difference is significant
@@ -474,7 +496,7 @@ const WatchRoom: React.FC<Props> = () => {
       setCurrentTime(time);
       emitTimeUpdate(time);
     }
-  };
+  }, [emitTimeUpdate, roomState.currentTime, setCurrentTime]);
 
   const handleSeek = (time: number) => {
     console.log(`Seek to ${time}`);
@@ -497,13 +519,20 @@ const WatchRoom: React.FC<Props> = () => {
 
   const handleSendMessage = (content: string) => {
     if (!content.trim()) return;
-    
+
+    console.log('Sending message:', content); // Debug log
+
     // Send the message to the server
     emitChatMessage(content);
-    
+
     // Clear the input field
     setChatInput('');
   };
+
+  // Debug log to check if messages are being updated
+  useEffect(() => {
+    console.log('Messages updated:', messages);
+  }, [messages]);
 
   const handleCopyRoomCode = () => {
     if (roomCode) {
@@ -514,7 +543,7 @@ const WatchRoom: React.FC<Props> = () => {
   };
 
   // Handle room reload
-  const handleReloadRoom = () => {
+  const handleReloadRoom = useCallback(() => {
     console.log('Reloading room...');
     // Re-join the room to refresh the state
     if (roomCode) {
@@ -524,7 +553,7 @@ const WatchRoom: React.FC<Props> = () => {
         window.location.reload();
       }, 500);
     }
-  };
+  }, [roomCode, leaveRoom]);
 
   // Initialize the waiting time from the room state if available
   useEffect(() => {
@@ -625,8 +654,7 @@ const WatchRoom: React.FC<Props> = () => {
       />
     );
   }, [
-    roomState.selectedMovie?.id,
-    roomState.selectedMovie?.source,
+    roomState.selectedMovie,
     roomState.isPlaying,
     roomState.currentTime,
     roomState.subtitlesEnabled,
@@ -634,7 +662,8 @@ const WatchRoom: React.FC<Props> = () => {
     handlePlay,
     handlePause,
     handleTimeUpdate,
-    handleReloadRoom
+    handleReloadRoom,
+    setRoomState
   ]);
 
   return (
@@ -666,9 +695,9 @@ const WatchRoom: React.FC<Props> = () => {
         </RoomInfo>
       </Header>
       
-      <MainContent isChatOpen={isChatOpen}>
-        <VideoSection isChatOpen={isChatOpen}>
-          <VideoContainer>
+      <MainContent isChatOpen={true}> {/* Force chat to always be open */}
+        <VideoSection isChatOpen={true}>
+          <VideoContainer isChatOpen={true}>
             {memoizedVideoPlayer}
             {roomState.selectedMovie && (
               <MovieTitle>{roomState.selectedMovie.title}</MovieTitle>
@@ -685,25 +714,31 @@ const WatchRoom: React.FC<Props> = () => {
           </VideoContainer>
         </VideoSection>
         
-        <ChatSection isOpen={isChatOpen}>
+        <ChatSection isOpen={true}> {/* Chat is always open */}
           <ChatHeader>
             Chat
-            <button onClick={() => setIsChatOpen(prev => !prev)} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer' }}>
+            {/* Commenting out the toggle button */}
+            {/* <button onClick={() => setIsChatOpen(prev => !prev)} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer' }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                 <path d="M6 6L18 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
-            </button>
+            </button> */}
           </ChatHeader>
           <ChatMessages>
-            {messages.map(message => (
+            {messages.map((message) => (
               <ChatMessage key={message.id}>
                 <MessageSender>{message.sender}</MessageSender>
                 <MessageContent>{message.content}</MessageContent>
               </ChatMessage>
             ))}
           </ChatMessages>
-          <ChatInputContainer onSubmit={(e) => handleSendMessage(chatInput)}>
+          <ChatInputContainer
+            onSubmit={(e) => {
+              e.preventDefault(); // Prevent the page from reloading
+              handleSendMessage(chatInput);
+            }}
+          >
             <ChatInput 
               placeholder="Type a message..." 
               value={chatInput}
@@ -717,14 +752,6 @@ const WatchRoom: React.FC<Props> = () => {
             </SendButton>
           </ChatInputContainer>
         </ChatSection>
-        
-        {!isChatOpen && (
-          <ChatToggleButton isOpen={isChatOpen} onClick={() => setIsChatOpen(prev => !prev)}>
-            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M21 15C21 15.5304 20.7893 16.0391 20.4142 16.4142C20.0391 16.7893 19.5304 17 19 17H7L3 21V5C3 4.46957 3.21071 3.96086 3.58579 3.58579C3.96086 3.21071 4.46957 3 5 3H19C19.5304 3 20.0391 3.21071 20.4142 3.58579C20.7893 3.96086 21 4.46957 21 5V15Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-          </ChatToggleButton>
-        )}
       </MainContent>
       
       {isWaitingForParticipants && roomState.isHost && showWaitingOverlay && (
