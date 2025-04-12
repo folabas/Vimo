@@ -4,6 +4,7 @@ import styled from '@emotion/styled';
 import Logo from '../components/Logo';
 import Button from '../components/Button';
 import { theme } from '../styles/theme';
+import { useAuth } from '../hooks/useAuth';
 
 const PageContainer = styled.div`
   min-height: 100vh;
@@ -35,6 +36,7 @@ const ErrorMessage = styled.p`
 
 const RoomNotFound: React.FC = () => {
   const navigate = useNavigate();
+  const { isLoggedIn } = useAuth();
   
   return (
     <PageContainer>
@@ -53,7 +55,7 @@ const RoomNotFound: React.FC = () => {
         The room you're looking for doesn't exist or has expired. Please check the room code and try again.
       </ErrorMessage>
       
-      <Button onClick={() => navigate('/')}>
+      <Button onClick={() => navigate(isLoggedIn ? '/dashboard' : '/')}>
         Back to Home
       </Button>
     </PageContainer>

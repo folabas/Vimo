@@ -1,8 +1,8 @@
-import React, { createContext, useState, useContext, ReactNode } from 'react';
+import React, { createContext, useState, ReactNode } from 'react';
 import { createRoom as apiCreateRoom, joinRoom as apiJoinRoom, leaveRoom as apiLeaveRoom, Movie } from '../services/api/roomService';
 import { socketService, SocketEvents } from '../services/api/socketService';
 
-interface RoomState {
+export interface RoomState {
   roomCode: string | null;
   isHost: boolean;
   selectedMovie: Movie | null;
@@ -13,7 +13,7 @@ interface RoomState {
   isPlaying: boolean;
 }
 
-interface RoomContextType {
+export interface RoomContextType {
   roomState: RoomState;
   setRoomCode: (code: string | null) => void;
   setIsHost: (isHost: boolean) => void;
@@ -39,7 +39,7 @@ const initialRoomState: RoomState = {
   isPlaying: false,
 };
 
-const RoomContext = createContext<RoomContextType | undefined>(undefined);
+export const RoomContext = createContext<RoomContextType | undefined>(undefined);
 
 export const RoomProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [roomState, setRoomState] = useState<RoomState>(initialRoomState);
@@ -252,7 +252,7 @@ export const RoomProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 };
 
 export const useRoom = (): RoomContextType => {
-  const context = useContext(RoomContext);
+  const context = React.useContext(RoomContext);
   if (context === undefined) {
     throw new Error('useRoom must be used within a RoomProvider');
   }

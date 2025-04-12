@@ -4,6 +4,7 @@ import styled from '@emotion/styled';
 import Logo from '../components/Logo';
 import Button from '../components/Button';
 import { theme } from '../styles/theme';
+import { useAuth } from '../hooks/useAuth';
 
 interface ErrorFallbackProps {
   error?: Error;
@@ -59,6 +60,7 @@ const ErrorFallback: React.FC<ErrorFallbackProps> = ({
   resetErrorBoundary 
 }) => {
   const navigate = useNavigate();
+  const { isLoggedIn } = useAuth();
   
   return (
     <PageContainer>
@@ -87,7 +89,7 @@ const ErrorFallback: React.FC<ErrorFallbackProps> = ({
             Try Again
           </Button>
         )}
-        <Button onClick={() => navigate('/')}>
+        <Button onClick={() => navigate(isLoggedIn ? '/dashboard' : '/')}>
           Back to Home
         </Button>
       </ButtonGroup>

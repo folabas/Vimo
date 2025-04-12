@@ -2,7 +2,7 @@ import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import styled from '@emotion/styled';
 import { colors } from '../styles/colors';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../hooks/useAuth';
 import UserProfile from './UserProfile';
 
 const Header: React.FC = () => {
@@ -17,7 +17,7 @@ const Header: React.FC = () => {
   return (
     <HeaderContainer>
       <HeaderContent>
-        <LogoLink to="/">
+        <LogoLink to={isLoggedIn ? "/dashboard" : "/"}>
           <LogoText>Vimo</LogoText>
         </LogoLink>
         

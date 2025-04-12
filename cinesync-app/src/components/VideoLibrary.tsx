@@ -3,7 +3,7 @@ import styled from '@emotion/styled';
 import { Video, getUserVideos, videoToMovie, getRoomVideos } from '../services/videoService';
 import { Movie } from '../services/api/roomService';
 import { theme } from '../styles/theme';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../hooks/useAuth';
 
 // Declare global type for our cache
 declare global {

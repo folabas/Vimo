@@ -4,7 +4,7 @@ import styled from '@emotion/styled';
 import Logo from '../components/Logo';
 import Button from '../components/Button';
 import { theme } from '../styles/theme';
-import { useRoom } from '../context/RoomContext';
+import { useRoom } from '../hooks/useRoom';
 import UserProfile from '../components/UserProfile';
 import { uploadVideo, getUserVideos, videoToMovie } from '../services/videoService';
 import VideoLibrary from '../components/VideoLibrary';
@@ -392,7 +392,7 @@ const PickMovie: React.FC = () => {
     <PageContainer>
       <Header>
         <HeaderLeft>
-          <BackButton onClick={() => navigate('/')}>
+          <BackButton onClick={() => navigate('/dashboard')}>
             <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M19 12H5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
               <path d="M12 19L5 12L12 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
@@ -505,7 +505,7 @@ const PickMovie: React.FC = () => {
         <ActionButtons>
           <Button 
             variant="outline" 
-            onClick={() => navigate('/')}
+            onClick={() => navigate('/dashboard')}
           >
             Cancel
           </Button>

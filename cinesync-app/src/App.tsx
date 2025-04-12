@@ -3,7 +3,8 @@ import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'r
 import { Global } from '@emotion/react';
 import { globalStyles } from './styles/globalStyles';
 import { RoomProvider } from './context/RoomContext';
-import { AuthProvider, useAuth } from './context/AuthContext';
+import { AuthProvider } from './context/AuthContext';
+import { useAuth } from './hooks/useAuth';
 import ErrorBoundary from './components/ErrorBoundary';
 import Header from './components/Header';
 import Footer from './components/Footer';
@@ -44,19 +45,56 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 
 function AppRoutes() {
   const location = useLocation();
+  const { isLoggedIn } = useAuth();
   const isWatchRoomPage = location.pathname.includes('/watch-room');
   const isPickMoviePage = location.pathname.includes('/pick-movie');
   const isJoinRoomPage = location.pathname.includes('/join-room');
+  const isLoginPage = location.pathname === '/login';
+  const isSignupPage = location.pathname === '/signup';
+  const isHomePage = location.pathname === '/';
+  
+  // Only show header on authenticated pages or non-auth pages that aren't login/signup/home
+  const showHeader = !isWatchRoomPage && !isPickMoviePage && !isJoinRoomPage && 
+                    !(isLoginPage || isSignupPage || (isHomePage && !isLoggedIn));
   
   // Render a simplified layout for watch room
   return (
     <PageWrapper>
-      {!isWatchRoomPage && !isPickMoviePage && !isJoinRoomPage && <Header />}
+      {showHeader && <Header />}
       <ContentContainer>
         <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/signup" element={<Signup />} />
+          <Route 
+            path="/" 
+            element={
+              isLoggedIn ? 
+                <Navigate to="/dashboard" /> : 
+                <Home />
+            } 
+          />
+          <Route 
+            path="/dashboard" 
+            element={
+              <ProtectedRoute>
+                <Home />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/login" 
+            element={
+              isLoggedIn ? 
+                <Navigate to="/dashboard" /> : 
+                <Login />
+            } 
+          />
+          <Route 
+            path="/signup" 
+            element={
+              isLoggedIn ? 
+                <Navigate to="/dashboard" /> : 
+                <Signup />
+            } 
+          />
           <Route 
             path="/pick-movie" 
             element={
