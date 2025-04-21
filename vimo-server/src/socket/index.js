@@ -139,13 +139,36 @@ function initializeSocket(server) {
           name: socket.user.name || socket.user.username
         };
         
-        // Deduplicate participants by userId
-        room.participants = Array.from(
-          new Map([...room.participants, participant].map((p) => [p.userId.toString(), p])).values()
+        // Atomically ensure only one participant per userId
+        await Room.updateOne(
+          { roomCode },
+          [
+            {
+              $set: {
+                participants: {
+                  $concatArrays: [
+                    {
+                      $filter: {
+                        input: "$participants",
+                        as: "p",
+                        cond: { $ne: ["$$p.userId", participant.userId] }
+                      }
+                    },
+                    [participant]
+                  ]
+                }
+              }
+            }
+          ]
         );
 
-        await room.save();
-        
+        // Fetch the updated room
+        const updatedRoom = await Room.findOne({ roomCode });
+        if (!updatedRoom) {
+          socket.emit('error', 'Room not found or could not update participants.');
+          return;
+        }
+
         // Notify other users about the new participant
         socket.to(roomCode).emit('participant-joined', participant);
         
@@ -155,7 +178,7 @@ function initializeSocket(server) {
         await logRoomParticipants(roomCode);
         
         // Add profile pictures to participants
-        const participantsWithProfiles = room.participants.map(p => ({
+        const participantsWithProfiles = updatedRoom.participants.map(p => ({
           id: p.userId.toString(),
           username: p.username,
           profilePicture: p.profilePicture || '',
@@ -163,7 +186,7 @@ function initializeSocket(server) {
         }));
         
         // Log the current number of participants
-        console.log(`Currently ${room.participants.length} participants in room ${roomCode}`);
+        console.log(`Currently ${updatedRoom.participants.length} participants in room ${roomCode}`);
         
         let movieData = null;
         if (room.movie) {
@@ -178,15 +201,15 @@ function initializeSocket(server) {
         }
         
         socket.emit('room-joined', {
-          roomCode: room.roomCode,
+          roomCode: updatedRoom.roomCode,
           selectedMovie: movieData, 
-          isPrivate: room.isPrivate,
-          subtitlesEnabled: room.subtitlesEnabled,
-          isPlaying: room.isPlaying,
-          currentTime: room.currentTime,
+          isPrivate: updatedRoom.isPrivate,
+          subtitlesEnabled: updatedRoom.subtitlesEnabled,
+          isPlaying: updatedRoom.isPlaying,
+          currentTime: updatedRoom.currentTime,
           participants: participantsWithProfiles,
-          isHost: room.hostId.toString() === socket.user.id.toString(),
-          expiration: room.expiresAt
+          isHost: updatedRoom.hostId.toString() === socket.user.id.toString(),
+          expiration: updatedRoom.expiresAt
         });
       } catch (error) {
         console.error('Error joining room:', error);
