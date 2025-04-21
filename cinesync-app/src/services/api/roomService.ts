@@ -36,10 +36,12 @@ export interface RoomState {
 
 // Participant interface
 export interface Participant {
+  id?: string;
   userId: string;
   username: string;
-  name: string; // Display name
-  joinedAt: string;
+  name?: string;
+  profilePicture?: string;
+  joinedAt?: string;
 }
 
 // Message interface for chat

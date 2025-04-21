@@ -317,7 +317,7 @@ class SocketService {
    * Listen for participant left events
    * @param callback - Callback function
    */
-  onParticipantLeft(callback: (participant: Participant) => void): void {
+  onParticipantLeft(callback: (data: { userId: string, username: string }) => void): void {
     this.on(SocketEvents.PARTICIPANT_LEFT, callback);
   }
   

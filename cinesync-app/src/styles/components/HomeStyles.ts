@@ -10,6 +10,9 @@ export const HomeContainer = styled.div`
   min-height: 100vh;
   padding: ${theme.spacing.xl};
   text-align: center;
+  @media (max-width: 600px) {
+    padding: ${theme.spacing.md};
+  }
 `;
 
 export const Tagline = styled.p`
@@ -22,11 +25,14 @@ export const OptionsContainer = styled.div`
   display: flex;
   gap: ${theme.spacing.xl};
   margin-top: ${theme.spacing.xl};
-  
-  @media (max-width: 768px) {
+  @media (max-width: 1024px) {
     flex-direction: column;
     width: 100%;
-    max-width: 300px;
+    max-width: 400px;
+  }
+  @media (max-width: 600px) {
+    gap: ${theme.spacing.md};
+    max-width: 100%;
   }
 `;
 
@@ -39,13 +45,15 @@ export const OptionCard = styled.div`
   padding: ${theme.spacing.xl};
   width: 220px;
   transition: transform ${theme.transitions.normal};
-  
   &:hover {
     transform: translateY(-5px);
   }
-  
-  @media (max-width: 768px) {
+  @media (max-width: 1024px) {
     width: 100%;
+  }
+  @media (max-width: 600px) {
+    padding: ${theme.spacing.md};
+    min-width: 0;
   }
 `;
 

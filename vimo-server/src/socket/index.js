@@ -17,6 +17,67 @@ function initializeSocket(server) {
     }
   });
 
+  // Helper function to deduplicate participants
+  const deduplicateParticipants = async (roomCode) => {
+    try {
+      const room = await Room.findOne({ roomCode });
+      if (!room) return null;
+      
+      // Log the current participants before deduplication
+      console.log(`Room ${roomCode} participants BEFORE deduplication:`);
+      room.participants.forEach((p, index) => {
+        console.log(`  ${index + 1}. User: ${p.username}, ID: ${p.userId.toString()}`);
+      });
+      
+      // Create a map to track unique participants by userId
+      const uniqueParticipants = new Map();
+      
+      // Keep only the most recent entry for each userId
+      room.participants.forEach(participant => {
+        uniqueParticipants.set(participant.userId.toString(), participant);
+      });
+      
+      // Convert map values back to array
+      room.participants = Array.from(
+        new Map(room.participants.map((p) => [p.userId.toString(), p])).values()
+      );
+      
+      // Log the participants after deduplication
+      console.log(`Room ${roomCode} participants AFTER deduplication:`);
+      room.participants.forEach((p, index) => {
+        console.log(`  ${index + 1}. User: ${p.username}, ID: ${p.userId.toString()}`);
+      });
+      
+      // Save the deduplicated participants list
+      await room.save();
+      
+      console.log(`Deduplicated participants in room ${roomCode}. Current count: ${room.participants.length}`);
+      return room;
+    } catch (error) {
+      console.error('Error deduplicating participants:', error);
+      return null;
+    }
+  };
+
+  // Helper function to log all participants in a room
+  const logRoomParticipants = async (roomCode) => {
+    try {
+      const room = await Room.findOne({ roomCode });
+      if (!room) {
+        console.log(`Room ${roomCode} not found`);
+        return;
+      }
+      
+      console.log(`\n=== ROOM ${roomCode} PARTICIPANTS (${room.participants.length} total) ===`);
+      room.participants.forEach((p, index) => {
+        console.log(`  ${index + 1}. User: ${p.username}, ID: ${p.userId.toString()}`);
+      });
+      console.log(`=== END ROOM ${roomCode} PARTICIPANTS ===\n`);
+    } catch (error) {
+      console.error('Error logging room participants:', error);
+    }
+  };
+
   io.use(async (socket, next) => {
     try {
       const token = socket.handshake.auth.token;
@@ -58,29 +119,51 @@ function initializeSocket(server) {
           return;
         }
         
-        const room = await Room.findOne({ roomCode });
+        let room = await Room.findOne({ roomCode });
         if (!room) {
           socket.emit('error', { message: 'Room not found' });
           return;
         }
         
+        // Store the room code in the socket for tracking
+        socket.currentRoom = roomCode;
+        
+        // Join the socket room
         socket.join(roomCode);
         
-        const isParticipant = room.participants.some(p => 
-          p.userId.toString() === socket.user.id.toString()
+        // Create participant object
+        const participant = {
+          userId: socket.user.id,
+          username: socket.user.username,
+          profilePicture: socket.user.profilePicture || '',
+          name: socket.user.name || socket.user.username
+        };
+        
+        // Deduplicate participants by userId
+        room.participants = Array.from(
+          new Map([...room.participants, participant].map((p) => [p.userId.toString(), p])).values()
         );
+
+        await room.save();
         
-        if (!isParticipant) {
-          room.participants.push({
-            userId: socket.user.id,
-            username: socket.user.username
-          });
-          await room.save();
-        }
+        // Notify other users about the new participant
+        socket.to(roomCode).emit('participant-joined', participant);
         
-        room.participants.forEach(p => {
-          p.profilePicture = socket.user.profilePicture;
-        });
+        console.log(`${socket.user.username} joined room ${roomCode}`);
+        
+        // Log all participants in the room
+        await logRoomParticipants(roomCode);
+        
+        // Add profile pictures to participants
+        const participantsWithProfiles = room.participants.map(p => ({
+          id: p.userId.toString(),
+          username: p.username,
+          profilePicture: p.profilePicture || '',
+          name: p.name || p.username
+        }));
+        
+        // Log the current number of participants
+        console.log(`Currently ${room.participants.length} participants in room ${roomCode}`);
         
         let movieData = null;
         if (room.movie) {
@@ -101,22 +184,10 @@ function initializeSocket(server) {
           subtitlesEnabled: room.subtitlesEnabled,
           isPlaying: room.isPlaying,
           currentTime: room.currentTime,
-          participants: room.participants.map(p => ({
-            id: p.userId.toString(),
-            username: p.username,
-            profilePicture: p.profilePicture
-          })),
+          participants: participantsWithProfiles,
           isHost: room.hostId.toString() === socket.user.id.toString(),
           expiration: room.expiresAt
         });
-        
-        io.to(roomCode).emit('participant-joined', {
-          id: socket.user.id,
-          username: socket.user.username,
-          profilePicture: socket.user.profilePicture
-        });
-        
-        console.log(`${socket.user.username} joined room ${roomCode}`);
       } catch (error) {
         console.error('Error joining room:', error);
         socket.emit('error', { message: 'Failed to join room' });
@@ -129,13 +200,27 @@ function initializeSocket(server) {
         // Leave socket room
         socket.leave(roomCode);
         
-        // Notify other users
-        socket.to(roomCode).emit('participant-left', {
-          userId: socket.user.id,
-          username: socket.user.username
-        });
+        // Clear the current room from socket
+        socket.currentRoom = null;
         
-        console.log(`${socket.user.username} left room ${roomCode}`);
+        // Get room data
+        const room = await Room.findOne({ roomCode });
+        if (room) {
+          // Use the Room model's removeParticipant method
+          room.removeParticipant(socket.user.id);
+          await room.save();
+          
+          // Notify other users
+          socket.to(roomCode).emit('participant-left', {
+            userId: socket.user.id,
+            username: socket.user.username
+          });
+          
+          console.log(`${socket.user.username} left room ${roomCode}`);
+          
+          // Log all participants in the room
+          await logRoomParticipants(roomCode);
+        }
       } catch (error) {
         console.error('Leave room error:', error);
       }
@@ -448,8 +533,71 @@ function initializeSocket(server) {
     });
     
     // Handle disconnection
-    socket.on('disconnect', () => {
+    socket.on('disconnect', async () => {
       console.log(`User disconnected: ${socket.user.username}`);
+      
+      // If the user was in a room, handle cleanup
+      if (socket.currentRoom) {
+        try {
+          const roomCode = socket.currentRoom;
+          const room = await Room.findOne({ roomCode });
+          
+          if (room) {
+            // Don't immediately remove the user on disconnect
+            // This allows for reconnection without losing participant status
+            
+            // Notify others about temporary disconnection
+            socket.to(roomCode).emit('participant-inactive', {
+              userId: socket.user.id,
+              username: socket.user.username
+            });
+            
+            console.log(`${socket.user.username} disconnected from room ${roomCode}`);
+            console.log(`Currently ${room.participants.length} participants in room ${roomCode}`);
+            
+            // Set a timeout to remove the participant if they don't reconnect
+            setTimeout(async () => {
+              try {
+                // Check if the room still exists
+                const currentRoom = await Room.findOne({ roomCode });
+                if (!currentRoom) return;
+                
+                // Check if the user is still in the participants list
+                const isStillParticipant = currentRoom.participants.some(p => 
+                  p.userId.toString() === socket.user.id.toString()
+                );
+                
+                if (isStillParticipant) {
+                  // Check if the user is still disconnected (not reconnected)
+                  const sockets = await io.in(roomCode).fetchSockets();
+                  const isReconnected = sockets.some(s => 
+                    s.user && s.user.id.toString() === socket.user.id.toString()
+                  );
+                  
+                  if (!isReconnected) {
+                    // Remove the participant after timeout
+                    currentRoom.removeParticipant(socket.user.id);
+                    await currentRoom.save();
+                    
+                    // Notify others
+                    io.to(roomCode).emit('participant-left', {
+                      userId: socket.user.id,
+                      username: socket.user.username
+                    });
+                    
+                    console.log(`${socket.user.username} automatically removed from room ${roomCode} after disconnect timeout`);
+                    console.log(`Currently ${currentRoom.participants.length} participants in room ${roomCode}`);
+                  }
+                }
+              } catch (error) {
+                console.error('Error in disconnect timeout handler:', error);
+              }
+            }, 60000); // 1 minute timeout
+          }
+        } catch (error) {
+          console.error('Error handling disconnect:', error);
+        }
+      }
     });
   });
 

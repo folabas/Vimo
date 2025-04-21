@@ -8,6 +8,11 @@ export const PageContainer = styled.div`
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  @media (max-width: 600px) {
+    height: auto;
+    min-height: 100vh;
+    padding-bottom: 56px;
+  }
 `;
 
 export const Header = styled.header`
@@ -21,6 +26,11 @@ export const Header = styled.header`
   align-items: center;
   padding: ${theme.spacing.md} ${theme.spacing.lg};
   background-color: rgba(0, 0, 0, 0.3);
+  @media (max-width: 600px) {
+    flex-direction: column;
+    padding: ${theme.spacing.sm} ${theme.spacing.md};
+    gap: ${theme.spacing.sm};
+  }
 `;
 
 export const RoomInfo = styled.div`
@@ -37,6 +47,22 @@ export const RoomCode = styled.div`
   padding: ${theme.spacing.xs} ${theme.spacing.sm};
   border-radius: ${theme.borderRadius.md};
   font-size: ${theme.typography.sizes.sm};
+`;
+
+export const ParticipantCount = styled.div`
+  display: flex;
+  align-items: center;
+  gap: ${theme.spacing.xs};
+  background-color: ${theme.colors.backgroundLight};
+  padding: ${theme.spacing.xs} ${theme.spacing.sm};
+  border-radius: ${theme.borderRadius.md};
+  font-size: ${theme.typography.sizes.sm};
+  margin-left: ${theme.spacing.sm};
+  
+  svg {
+    width: 16px;
+    height: 16px;
+  }
 `;
 
 export const CopyButton = styled.button`
@@ -70,7 +96,6 @@ export const MainContent = styled.div<{ isChatOpen: boolean }>`
   flex: 1;
   display: flex;
   margin-top: ${theme.spacing['3xl']}; /* Adjust for fixed header height */
-
   ${({ isChatOpen }) =>
     isChatOpen
       ? `
@@ -81,13 +106,17 @@ export const MainContent = styled.div<{ isChatOpen: boolean }>`
       flex-direction: column;
       overflow-y: auto;
     `}
+  @media (max-width: 1024px) {
+    flex-direction: column;
+    margin-top: ${theme.spacing.xl};
+  }
 `;
 
 export const VideoSection = styled.div<{ isChatOpen: boolean }>`
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: ${theme.spacing['2xl']} ${theme.spacing.xl} ${theme.spacing.xl}; /* Increased top padding */
+  padding: ${theme.spacing['2xl']} ${theme.spacing.xl} ${theme.spacing.xl};
   overflow-y: ${({ isChatOpen }) => (isChatOpen ? 'auto' : 'hidden')};
   ${({ isChatOpen }) =>
     !isChatOpen &&
@@ -100,6 +129,9 @@ export const VideoSection = styled.div<{ isChatOpen: boolean }>`
   }
   -ms-overflow-style: none; /* IE and Edge */
   scrollbar-width: none; /* Firefox */
+  @media (max-width: 600px) {
+    padding: ${theme.spacing.md} ${theme.spacing.sm} ${theme.spacing.sm};
+  }
 `;
 
 export const VideoContainer = styled.div<{ isChatOpen: boolean }>`
@@ -119,6 +151,9 @@ export const VideoContainer = styled.div<{ isChatOpen: boolean }>`
   }
   -ms-overflow-style: none; /* IE and Edge */
   scrollbar-width: none; /* Firefox */
+  @media (max-width: 600px) {
+    min-height: 200px;
+  }
 `;
 
 export const MovieTitle = styled.h1`
@@ -134,11 +169,19 @@ export const ChatSection = styled.div<{ isOpen: boolean }>`
   flex-direction: column;
   transition: width 0.3s ease;
   overflow: hidden;
-  
   @media (max-width: 1024px) {
     width: 100%;
     height: ${props => props.isOpen ? '300px' : '0'};
     transition: height 0.3s ease;
+  }
+  @media (max-width: 600px) {
+    position: fixed;
+    left: 0;
+    bottom: 0;
+    width: 100vw;
+    max-width: 100vw;
+    height: ${props => props.isOpen ? '60vh' : '0'};
+    z-index: 200;
   }
 `;
 

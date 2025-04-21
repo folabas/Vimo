@@ -33,6 +33,8 @@ const RoomSchema = new mongoose.Schema({
       ref: 'User'
     },
     username: String,
+    profilePicture: String,
+    name: String,
     joinedAt: {
       type: Date,
       default: Date.now
@@ -64,6 +66,21 @@ RoomSchema.statics.generateRoomCode = function() {
     result += characters.charAt(Math.floor(Math.random() * characters.length));
   }
   return result;
+};
+
+RoomSchema.methods.addParticipant = function (participant) {
+  // Deduplicate participants by userId
+  const uniqueParticipants = new Map(
+    [...this.participants, participant].map((p) => [p.userId.toString(), p])
+  );
+  this.participants = Array.from(uniqueParticipants.values());
+  this.lastActivity = new Date(); // Update last activity
+};
+
+RoomSchema.methods.removeParticipant = function (userId) {
+  // Remove the participant by userId
+  this.participants = this.participants.filter(p => p.userId.toString() !== userId.toString());
+  this.lastActivity = new Date(); // Update last activity
 };
 
 const Room = mongoose.model('Room', RoomSchema);

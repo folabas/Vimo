@@ -1,6 +1,9 @@
 export interface Participant {
-  id: string;
-  name: string;
+  id?: string;
+  userId: string;
+  username: string;
+  name?: string;
+  profilePicture?: string;
 }
 
 export interface Movie {

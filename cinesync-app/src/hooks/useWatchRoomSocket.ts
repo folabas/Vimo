@@ -105,34 +105,30 @@ export const useWatchRoomSocket = ({
   }, []);
 
   const handleParticipantJoined = useCallback((participant: Participant) => {
-    if (!isMountedRef.current || controllerRef.current.signal.aborted) return;
-    
-    console.log('Participant joined:', participant);
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: `system-${Date.now()}`,
-        sender: 'System',
-        content: `${participant.name} joined the room`,
-        timestamp: new Date(),
-      },
-    ]);
-    
-    // If someone joined, stop waiting
-    setIsWaitingForParticipants(false);
-    setShowWaitingOverlay(false);
+    setRoomState((prev) => {
+      const uniqueParticipants = new Map(
+        [...prev.participants, participant].map((p) => [p.userId, p])
+      );
+      return {
+        ...prev,
+        participants: Array.from(uniqueParticipants.values()),
+      };
+    });
   }, []);
 
-  const handleParticipantLeft = useCallback((participant: Participant) => {
-    if (!isMountedRef.current || controllerRef.current.signal.aborted) return;
+  const handleParticipantLeft = useCallback((data: { userId: string, username: string }) => {
+    setRoomState((prev) => ({
+      ...prev,
+      participants: prev.participants.filter(p => p.userId !== data.userId),
+    }));
     
-    console.log('Participant left:', participant);
+    // Add a system message about the participant leaving
     setMessages((prev) => [
       ...prev,
       {
         id: `system-${Date.now()}`,
         sender: 'System',
-        content: `${participant.name} left the room`,
+        content: `${data.username} left the room`,
         timestamp: new Date(),
       },
     ]);
@@ -241,14 +237,24 @@ export const useWatchRoomSocket = ({
       setMessages((prev) => [...prev, message]);
     });
 
+    // Listen for participant-joined event
+    socketService.onParticipantJoined(handleParticipantJoined);
+    
+    // Listen for participant-left event
+    socketService.onParticipantLeft(handleParticipantLeft);
+
     return () => {
       console.log('Cleaning up socket connection');
       if (connectionTracker.currentRoom === roomCode) {
         leaveRoom();
       }
       connectionTracker.currentRoom = null;
+
+      // Clean up listeners on unmount
+      socketService.off(SocketEvents.PARTICIPANT_JOINED, handleParticipantJoined);
+      socketService.off(SocketEvents.PARTICIPANT_LEFT, handleParticipantLeft);
     };
-  }, [roomCode, setupRoom, leaveRoom]);
+  }, [roomCode, setupRoom, leaveRoom, handleParticipantJoined, handleParticipantLeft]);
 
   // Debug effect to log state changes
   useEffect(() => {

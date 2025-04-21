@@ -12,6 +12,11 @@ export const PageContainer = styled.div`
   padding: ${theme.spacing.xl};
   background-color: ${colors.background};
   position: relative;
+  @media (max-width: 600px) {
+    padding: ${theme.spacing.md};
+    min-height: 100vh;
+    height: auto;
+  }
 `;
 
 export const HeaderContainer = styled.div`
@@ -24,6 +29,11 @@ export const HeaderContainer = styled.div`
   align-items: center;
   padding: ${theme.spacing.md} ${theme.spacing.xl};
   border-bottom: 1px solid ${colors.border};
+  @media (max-width: 600px) {
+    flex-direction: column;
+    padding: ${theme.spacing.sm} ${theme.spacing.md};
+    gap: ${theme.spacing.sm};
+  }
 `;
 
 export const HeaderLeft = styled.div`
@@ -66,6 +76,10 @@ export const JoinRoomCard = styled.div`
   max-width: 400px;
   margin-top: ${theme.spacing.lg};
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  @media (max-width: 600px) {
+    padding: 16px 8px;
+    margin-top: 56px;
+  }
 `;
 
 export const CardTitle = styled.h2`

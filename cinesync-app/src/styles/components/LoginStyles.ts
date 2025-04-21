@@ -8,6 +8,10 @@ export const Container = styled.div`
   align-items: center;
   min-height: 100vh;
   background: linear-gradient(135deg, ${colors.background}, ${colors.backgroundDark});
+  @media (max-width: 600px) {
+    padding: 12px;
+    min-height: 100vh;
+  }
 `;
 
 export const FormCard = styled.div`
@@ -17,6 +21,10 @@ export const FormCard = styled.div`
   padding: 40px;
   width: 100%;
   max-width: 420px;
+  @media (max-width: 600px) {
+    padding: 16px 8px;
+    max-width: 100vw;
+  }
 `;
 
 export const Logo = styled.h1`
