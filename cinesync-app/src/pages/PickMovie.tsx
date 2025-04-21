@@ -1,268 +1,47 @@
-import React, { useState, useLayoutEffect } from 'react';
+import React, { useState, useLayoutEffect, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import styled from '@emotion/styled';
-import Logo from '../components/Logo';
-import Button from '../components/Button';
 import { theme } from '../styles/theme';
 import { useRoom } from '../hooks/useRoom';
-import UserProfile from '../components/UserProfile';
 import { uploadVideo, getUserVideos, videoToMovie } from '../services/videoService';
+import { usePickMovie } from '../hooks/usePickMovie';
+import {
+  PageContainer,
+  Header,
+  HeaderLeft,
+  HeaderRight,
+  BackButton,
+  StyledUserProfile,
+  PageTitle,
+  PageDescription,
+  OptionsContainer,
+  SectionTitle,
+  MovieGrid,
+  MovieCard,
+  MovieThumbnail,
+  MovieInfo,
+  MovieTitle,
+  MovieDuration,
+  UploadSection,
+  UploadIcon,
+  UploadText,
+  UploadSubtext,
+  HiddenInput,
+  UploadProgress,
+  Progress,
+  OptionsSection,
+  OptionRow,
+  OptionLabel,
+  OptionDescription,
+  Toggle,
+  ToggleInput,
+  ToggleSlider,
+  ActionButtons
+} from '../styles/components/PickMovieStyles';
 import VideoLibrary from '../components/VideoLibrary';
+import Button from '../components/Button';
+import Logo from '../components/Logo';
+import { Movie } from '../types/room';
 
-const PageContainer = styled.div`
-  min-height: 100vh;
-  padding: ${theme.spacing.xl};
-  background-color: ${theme.colors.background};
-`;
-
-const Header = styled.header`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: ${theme.spacing.xl};
-  border-bottom: 1px solid ${theme.colors.border};
-`;
-
-const HeaderLeft = styled.div`
-  display: flex;
-  align-items: center;
-`;
-
-const HeaderRight = styled.div`
-  display: flex;
-  align-items: center;
-`;
-
-const BackButton = styled.button`
-  background: none;
-  border: none;
-  color: ${theme.colors.textSecondary};
-  display: flex;
-  align-items: center;
-  gap: ${theme.spacing.xs};
-  cursor: pointer;
-  font-size: ${theme.typography.sizes.md};
-  transition: color ${theme.transitions.fast};
-  
-  &:hover {
-    color: ${theme.colors.text};
-  }
-  
-  svg {
-    width: 1.2em;
-    height: 1.2em;
-  }
-`;
-
-const StyledUserProfile = styled(UserProfile)`
-  margin-left: 16px;
-`;
-
-const PageTitle = styled.h1`
-  margin-bottom: ${theme.spacing.lg};
-  font-size: ${theme.typography.sizes['3xl']};
-  color: ${theme.colors.text};
-`;
-
-const PageDescription = styled.p`
-  color: ${theme.colors.textSecondary};
-  margin-bottom: ${theme.spacing['2xl']};
-  max-width: 600px;
-`;
-
-const OptionsContainer = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: ${theme.spacing.xl};
-`;
-
-const SectionTitle = styled.h2`
-  font-size: ${theme.typography.sizes.xl};
-  margin-bottom: ${theme.spacing.md};
-  color: ${theme.colors.text};
-`;
-
-const MovieGrid = styled.div`
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: ${theme.spacing.lg};
-  margin-bottom: ${theme.spacing.xl};
-`;
-
-const MovieCard = styled.div<{ isSelected: boolean }>`
-  border-radius: ${theme.borderRadius.md};
-  overflow: hidden;
-  transition: transform ${theme.transitions.fast};
-  cursor: pointer;
-  position: relative;
-  background-color: ${theme.colors.backgroundLight};
-  
-  ${props => props.isSelected && `
-    box-shadow: 0 0 0 3px ${theme.colors.primary};
-  `}
-  
-  &:hover {
-    transform: translateY(-5px);
-  }
-`;
-
-const MovieThumbnail = styled.img`
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  object-fit: cover;
-`;
-
-const MovieInfo = styled.div`
-  padding: ${theme.spacing.sm};
-  background-color: ${theme.colors.backgroundLight};
-`;
-
-const MovieTitle = styled.h3`
-  font-size: ${theme.typography.sizes.md};
-  margin-bottom: ${theme.spacing.xs};
-  color: ${theme.colors.text};
-`;
-
-const MovieDuration = styled.span`
-  font-size: ${theme.typography.sizes.sm};
-  color: ${theme.colors.textSecondary};
-`;
-
-const UploadSection = styled.div`
-  border: 2px dashed ${theme.colors.textSecondary};
-  border-radius: ${theme.borderRadius.md};
-  padding: ${theme.spacing.xl};
-  text-align: center;
-  margin-bottom: ${theme.spacing.xl};
-  cursor: pointer;
-  transition: all ${theme.transitions.fast};
-  background-color: ${theme.colors.backgroundLight};
-  
-  &:hover {
-    border-color: ${theme.colors.primary};
-    background-color: rgba(231, 76, 60, 0.05);
-  }
-`;
-
-const UploadIcon = styled.div`
-  color: ${theme.colors.textSecondary};
-  font-size: 2rem;
-  margin-bottom: ${theme.spacing.md};
-`;
-
-const UploadText = styled.p`
-  margin-bottom: ${theme.spacing.sm};
-  color: ${theme.colors.text};
-`;
-
-const UploadSubtext = styled.p`
-  font-size: ${theme.typography.sizes.sm};
-  color: ${theme.colors.textSecondary};
-`;
-
-const HiddenInput = styled.input`
-  display: none;
-`;
-
-const UploadProgress = styled.div`
-  width: 100%;
-  height: 4px;
-  background-color: ${theme.colors.backgroundLight};
-  border-radius: 2px;
-  margin-top: ${theme.spacing.xs};
-  overflow: hidden;
-`;
-
-const Progress = styled.div<{ width: string }>`
-  height: 100%;
-  background-color: ${theme.colors.primary};
-  border-radius: 2px;
-  width: ${props => props.width};
-  transition: width 0.3s ease;
-`;
-
-const OptionsSection = styled.div`
-  margin-top: ${theme.spacing.xl};
-  margin-bottom: ${theme.spacing.xl};
-  max-width: 600px;
-`;
-
-const OptionRow = styled.div`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: ${theme.spacing.md} 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  
-  &:last-of-type {
-    border-bottom: none;
-  }
-`;
-
-const OptionLabel = styled.div`
-  font-weight: 500;
-  color: ${theme.colors.text};
-`;
-
-const OptionDescription = styled.div`
-  font-size: ${theme.typography.sizes.sm};
-  color: ${theme.colors.textSecondary};
-  margin-top: ${theme.spacing.xs};
-`;
-
-const Toggle = styled.label`
-  position: relative;
-  display: inline-block;
-  width: 48px;
-  height: 24px;
-`;
-
-const ToggleInput = styled.input`
-  opacity: 0;
-  width: 0;
-  height: 0;
-  
-  &:checked + span {
-    background-color: ${theme.colors.primary};
-  }
-  
-  &:checked + span:before {
-    transform: translateX(24px);
-  }
-`;
-
-const ToggleSlider = styled.span`
-  position: absolute;
-  cursor: pointer;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: ${theme.colors.backgroundLight};
-  transition: ${theme.transitions.fast};
-  border-radius: 34px;
-  
-  &:before {
-    position: absolute;
-    content: "";
-    height: 18px;
-    width: 18px;
-    left: 3px;
-    bottom: 3px;
-    background-color: white;
-    transition: ${theme.transitions.fast};
-    border-radius: 50%;
-  }
-`;
-
-const ActionButtons = styled.div`
-  display: flex;
-  justify-content: flex-end;
-  gap: ${theme.spacing.md};
-  margin-top: ${theme.spacing.xl};
-`;
-
-// Sample movie data
 const sampleMovies = [
   {
     id: 'movie1',
@@ -297,97 +76,28 @@ const sampleMovies = [
 const PickMovie: React.FC = () => {
   const navigate = useNavigate();
   const { createRoom } = useRoom();
-  const [selectedMovie, setSelectedMovie] = useState<typeof sampleMovies[0] | null>(null);
-  const [isPrivate, setIsPrivate] = useState(false);
-  const [subtitlesEnabled, setSubtitlesEnabled] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [userVideos, setUserVideos] = useState<any[]>([]);
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
-  
-  // Load user videos without useEffect
-  const loadUserVideos = () => {
-    getUserVideos()
-      .then(videos => {
-        const formattedVideos = videos.map(videoToMovie);
-        setUserVideos(formattedVideos);
-      })
-      .catch(error => {
-        console.error('Failed to load videos:', error);
-      });
-  };
-  
-  // Call loadUserVideos immediately
-  React.useLayoutEffect(() => {
+  const {
+    selectedMovie,
+    setSelectedMovie,
+    isPrivate,
+    setIsPrivate,
+    subtitlesEnabled,
+    setSubtitlesEnabled,
+    isUploading,
+    uploadProgress,
+    userVideos,
+    setUserVideos,
+    fileInputRef,
+    loadUserVideos,
+    handleFileChange,
+    handleMovieSelect,
+    handleCreateRoom,
+  } = usePickMovie(sampleMovies);
+
+  useEffect(() => {
     loadUserVideos();
-  }, []);
-  
-  const handleMovieSelect = (movie: typeof sampleMovies[0]) => {
-    setSelectedMovie(movie);
-  };
-  
-  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    
-    console.log(`Starting upload for file: ${file.name} (${Math.round(file.size / 1024 / 1024 * 100) / 100} MB)`);
-    
-    setIsUploading(true);
-    setUploadProgress(0);
-    
-    try {
-      const uploadedVideo = await uploadVideo(
-        file,
-        file.name.split('.')[0], // Use filename as title
-        '', // No description for now
-        (progress) => {
-          setUploadProgress(progress);
-          console.log(`Upload progress: ${progress}%`);
-        }
-      );
-      
-      console.log('Video uploaded successfully!', uploadedVideo);
-      
-      // Convert the uploaded video to movie format and add to userVideos
-      const movieFromVideo = videoToMovie(uploadedVideo);
-      setUserVideos(prev => [...prev, movieFromVideo]);
-      
-      // Auto-select the uploaded video
-      setSelectedMovie(movieFromVideo as typeof sampleMovies[0]);
-      
-      // Reset upload state
-      setIsUploading(false);
-      setUploadProgress(0);
-      
-      // Clear the file input
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-    } catch (error) {
-      console.error('Failed to upload video:', error);
-      setIsUploading(false);
-      setUploadProgress(0);
-      alert('Failed to upload video. Please try again.');
-    }
-  };
-  
-  const handleCreateRoom = async () => {
-    if (!selectedMovie) return;
-    
-    try {
-      const roomCode = await createRoom(
-        selectedMovie,
-        isPrivate,
-        subtitlesEnabled
-      );
-      
-      navigate(`/watch-room/${roomCode}`);
-    } catch (error) {
-      console.error('Failed to create room:', error);
-      // Would show an error message in a real app
-    }
-  };
-  
+  }, [loadUserVideos]);
+
   return (
     <PageContainer>
       <Header>
@@ -415,10 +125,8 @@ const PickMovie: React.FC = () => {
         <div>
           <SectionTitle>Your Videos</SectionTitle>
           <VideoLibrary 
-            onSelectVideo={(video) => {
-              // Convert video to the format expected by handleMovieSelect if needed
-              handleMovieSelect(video as typeof sampleMovies[0]);
-            }} 
+            onSelectVideo={(video: Movie) => handleMovieSelect(video)} 
+            selectedVideoId={selectedMovie?.id}
           />
         </div>
         
