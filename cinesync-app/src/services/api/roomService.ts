@@ -83,7 +83,7 @@ export const createRoom = async (
   isPrivate: boolean,
   subtitlesEnabled: boolean
 ): Promise<CreateRoomResponse> => {
-  return apiClient.post<CreateRoomResponse>('/rooms', {
+  return apiClient.post<CreateRoomResponse>('/api/rooms', {
     movie,
     isPrivate,
     subtitlesEnabled,
@@ -105,7 +105,7 @@ export const joinRoom = async (roomCode: string): Promise<JoinRoomResponse> => {
  * @returns Promise with the room details
  */
 export const getRoomDetails = async (roomCode: string): Promise<Room> => {
-  return apiClient.get<Room>(`/rooms/${roomCode}`);
+  return apiClient.get<Room>(`/api/rooms/${roomCode}`);
 };
 
 /**
