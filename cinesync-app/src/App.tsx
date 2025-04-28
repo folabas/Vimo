@@ -9,6 +9,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import Header from './components/Header';
 import Footer from './components/Footer';
 import styled from '@emotion/styled';
+import { Analytics } from "@vercel/analytics/react";
 
 // Pages
 import Home from './pages/Home';
@@ -136,6 +137,7 @@ function App() {
         <Router>
           <ErrorBoundary>
             <AppRoutes />
+            <Analytics />
           </ErrorBoundary>
         </Router>
       </RoomProvider>
