@@ -51,11 +51,9 @@ class SocketService {
       return Promise.resolve();
     }
     
-    // Mark as connecting to prevent duplicate connections
-    this.isConnecting = true;
-    
-    // Create new connection promise
     this.connectionPromise = new Promise((resolve, reject) => {
+      this.isConnecting = true;
+      
       const token = getToken();
       if (!token) {
         this.isConnecting = false;
@@ -63,42 +61,45 @@ class SocketService {
         return reject(new Error('Authentication required'));
       }
       
-      const SOCKET_URL = process.env.REACT_APP_SOCKET_URL || 'http://localhost:5000';
+      const BASE_URL = process.env.REACT_APP_SOCKET_URL || 'http://localhost:5000';
       
-      this.socket = io(SOCKET_URL, {
-        auth: { token },
-        transports: ['websocket'],
-        reconnection: true,
+      // Configure socket options with fallback to polling if WebSocket fails
+      this.socket = io(BASE_URL, {
+        auth: {
+          token,
+        },
+        transports: ['websocket', 'polling'],
         reconnectionAttempts: 5,
         reconnectionDelay: 1000,
+        timeout: 10000
       });
       
       this.socket.on('connect', () => {
-        console.log('Socket connected');
+        console.log('[SocketService] Connected to server, socket id:', this.socket?.id);
         this.isConnecting = false;
         resolve();
       });
       
       this.socket.on('disconnect', () => {
-        console.log('Socket disconnected');
+        console.log('[SocketService] Disconnected from server');
       });
       
       this.socket.on('connect_error', (error) => {
-        console.error('Socket connection error:', error);
+        console.error('[SocketService] Connection error:', error);
         this.isConnecting = false;
         this.connectionPromise = null;
         reject(error);
       });
       
-      // Add debug listener for room-joined events
-      this.socket.on('room-joined', (data: any) => {
-        console.log('SocketService: room-joined event received:', {
-          roomCode: data.roomCode,
-          hasMovie: !!data.selectedMovie,
-          selectedMovieSource: data.selectedMovie?.source || 'None',
-          sourceLength: data.selectedMovie?.source?.length || 0
-        });
-      });
+      // Add timeout to prevent hanging indefinitely
+      setTimeout(() => {
+        if (this.isConnecting) {
+          console.error('[SocketService] Connection timeout after 10 seconds');
+          this.isConnecting = false;
+          this.connectionPromise = null;
+          reject(new Error('Connection timeout'));
+        }
+      }, 10000);
     });
     
     return this.connectionPromise;
@@ -166,35 +167,47 @@ class SocketService {
   
   /**
    * Emit play event
-   * @param currentTime - Current time in seconds
+   * @param payload - Object with roomCode and currentTime
+   * @param isHost - Whether the user is the host
    */
-  emitPlay(currentTime: number): void {
+  emitPlay(payload: { roomCode: string; currentTime: number }, isHost: boolean): void {
     if (!this.socket) return;
-    
-    console.log(`Emitting play at time: ${currentTime}`);
-    this.socket.emit(SocketEvents.PLAY_VIDEO, { currentTime });
+    if (!isHost) {
+      console.warn('Non-host tried to emit play event');
+      return;
+    }
+    console.log(`Emitting play in room ${payload.roomCode} at time: ${payload.currentTime}`);
+    this.socket.emit(SocketEvents.PLAY_VIDEO, payload);
   }
-  
+
   /**
    * Emit pause event
-   * @param currentTime - Current time in seconds
+   * @param payload - Object with roomCode and currentTime
+   * @param isHost - Whether the user is the host
    */
-  emitPause(currentTime: number): void {
+  emitPause(payload: { roomCode: string; currentTime: number }, isHost: boolean): void {
     if (!this.socket) return;
-    
-    console.log(`Emitting pause at time: ${currentTime}`);
-    this.socket.emit(SocketEvents.PAUSE_VIDEO, { currentTime });
+    if (!isHost) {
+      console.warn('Non-host tried to emit pause event');
+      return;
+    }
+    console.log(`Emitting pause in room ${payload.roomCode} at time: ${payload.currentTime}`);
+    this.socket.emit(SocketEvents.PAUSE_VIDEO, payload);
   }
-  
+
   /**
    * Emit seek event
-   * @param currentTime - Current time in seconds
+   * @param payload - Object with roomCode and currentTime
+   * @param isHost - Whether the user is the host
    */
-  emitSeek(currentTime: number): void {
+  emitSeek(payload: { roomCode: string; currentTime: number }, isHost: boolean): void {
     if (!this.socket) return;
-    
-    console.log(`Emitting seek to time: ${currentTime}`);
-    this.socket.emit(SocketEvents.SEEK_VIDEO, { currentTime });
+    if (!isHost) {
+      console.warn('Non-host tried to emit seek event');
+      return;
+    }
+    console.log(`Emitting seek in room ${payload.roomCode} to time: ${payload.currentTime}`);
+    this.socket.emit(SocketEvents.SEEK_VIDEO, payload);
   }
   
   /**
@@ -322,20 +335,23 @@ class SocketService {
   }
   
   /**
-   * Add event listener
-   * @param event - Event name
-   * @param callback - Callback function
+   * Register a socket event listener
    */
   async on(event: string, callback: Function): Promise<void> {
     // Initialize socket if needed
     await this.initialize();
     
     if (!this.socket) {
+      console.error(`[SocketService] Cannot register event '${event}': Socket not initialized`);
       throw new Error('Socket not initialized');
     }
     
+    console.log(`[SocketService] Registering event listener for '${event}'`);
+    
     // Create a wrapped callback to ensure we can properly remove it later
     const wrappedCallback = (data: any) => {
+      console.log(`[SocketService] Event '${event}' received with args:`, data);
+      
       // Special handling for room state updates to ensure valid data
       if (event === SocketEvents.ROOM_STATE_UPDATE) {
         // Clone the data to avoid reference issues
@@ -429,6 +445,13 @@ class SocketService {
         }
       }
     }
+  }
+
+  /**
+   * Check if socket is connected
+   */
+  isConnected(): boolean {
+    return this.socket?.connected || false;
   }
 }
 

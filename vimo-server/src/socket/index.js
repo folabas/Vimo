@@ -14,7 +14,10 @@ function initializeSocket(server) {
       origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
       methods: ['GET', 'POST'],
       credentials: true
-    }
+    },
+    transports: ['websocket', 'polling'],
+    pingTimeout: 30000,
+    pingInterval: 25000
   });
 
   // Helper function to deduplicate participants
@@ -64,17 +67,17 @@ function initializeSocket(server) {
     try {
       const room = await Room.findOne({ roomCode });
       if (!room) {
-        console.log(`Room ${roomCode} not found`);
+        // console.log(`Room ${roomCode} not found`);
         return;
       }
-      
-      console.log(`\n=== ROOM ${roomCode} PARTICIPANTS (${room.participants.length} total) ===`);
-      room.participants.forEach((p, index) => {
-        console.log(`  ${index + 1}. User: ${p.username}, ID: ${p.userId.toString()}`);
-      });
-      console.log(`=== END ROOM ${roomCode} PARTICIPANTS ===\n`);
+      // Suppress participant logs
+      // console.log(`\n=== ROOM ${roomCode} PARTICIPANTS (${room.participants.length} total) ===`);
+      // room.participants.forEach((p, index) => {
+      //   console.log(`  ${index + 1}. User: ${p.username}, ID: ${p.userId.toString()}`);
+      // });
+      // console.log(`=== END ROOM ${roomCode} PARTICIPANTS ===\n`);
     } catch (error) {
-      console.error('Error logging room participants:', error);
+      // console.error('Error logging room participants:', error);
     }
   };
 
@@ -108,9 +111,84 @@ function initializeSocket(server) {
   });
 
   // Handle socket connections
-  io.on('connection', (socket) => {
+  io.on('connection', async (socket) => {
     console.log(`User connected: ${socket.user.username}`);
     
+    // Store current playback positions for each room
+    const roomSyncIntervals = new Map();
+    
+    // Function to broadcast current playback position to all clients in a room
+    const startPlaybackSync = async (roomCode) => {
+      // Clear any existing interval for this room
+      if (roomSyncIntervals.has(roomCode)) {
+        clearInterval(roomSyncIntervals.get(roomCode));
+      }
+      
+      // Set up a new interval to broadcast position every 2 seconds
+      const intervalId = setInterval(async () => {
+        try {
+          const room = await Room.findOne({ roomCode });
+          if (!room || !room.isPlaying) return;
+          
+          // Broadcast current position to all clients in the room
+          io.to(roomCode).emit('playback-sync', { 
+            currentTime: room.currentTime + (Date.now() - room.lastActivity) / 1000 
+          });
+        } catch (error) {
+          console.error('Error in playback sync:', error);
+        }
+      }, 2000); // Sync every 2 seconds
+      
+      roomSyncIntervals.set(roomCode, intervalId);
+    };
+    
+    // Clean up sync interval when room is empty
+    const stopPlaybackSync = (roomCode) => {
+      if (roomSyncIntervals.has(roomCode)) {
+        clearInterval(roomSyncIntervals.get(roomCode));
+        roomSyncIntervals.delete(roomCode);
+        console.log(`Stopped playback sync for room ${roomCode}`);
+      }
+    };
+    
+    // Helper function to handle participant leaving
+    const handleParticipantLeft = async (roomCode, userId) => {
+      try {
+        const room = await Room.findOne({ roomCode });
+        if (!room) return;
+        
+        // Find the participant
+        const participantIndex = room.participants.findIndex(
+          p => p.userId.toString() === userId.toString()
+        );
+        
+        if (participantIndex !== -1) {
+          // Get the participant info before removing
+          const participant = room.participants[participantIndex];
+          
+          // Remove the participant
+          room.participants.splice(participantIndex, 1);
+          await room.save();
+          
+          // Notify others
+          io.to(roomCode).emit('participant-left', {
+            userId: participant.userId,
+            username: participant.username
+          });
+          
+          console.log(`${participant.username} left room ${roomCode}`);
+          console.log(`Currently ${room.participants.length} participants in room ${roomCode}`);
+          
+          // If room is empty, clean up
+          if (room.participants.length === 0) {
+            stopPlaybackSync(roomCode);
+          }
+        }
+      } catch (error) {
+        console.error('Error handling participant left:', error);
+      }
+    };
+
     // Join a room
     socket.on('join-room', async ({ roomCode }) => {
       try {
@@ -118,6 +196,9 @@ function initializeSocket(server) {
           socket.emit('error', { message: 'Not authenticated' });
           return;
         }
+        
+        // Log the joining socket id
+        console.log(`[Backend] Socket ${socket.id} (${socket.user.username}) joining room ${roomCode}`);
         
         let room = await Room.findOne({ roomCode });
         if (!room) {
@@ -248,6 +329,101 @@ function initializeSocket(server) {
         console.error('Leave room error:', error);
       }
     });
+    
+    // --- Playback synchronization handlers ---
+    // Helper to check if user is the room host
+    async function isRoomHost(roomCode, userId) {
+      const room = await Room.findOne({ roomCode });
+      return room && room.hostId.toString() === userId.toString();
+    }
+
+    // Only host can control playback
+    socket.on('play-video', async ({ roomCode, currentTime }) => {
+      if (await isRoomHost(roomCode, socket.user.id)) {
+        // Log all socket ids in the room before emitting
+        const socketsInRoom = await io.in(roomCode).allSockets();
+        console.log(`[Backend] Sockets in room ${roomCode}:`, Array.from(socketsInRoom));
+        
+        // Update room status
+        await Room.updateOne(
+          { roomCode },
+          { 
+            isPlaying: true,
+            currentTime,
+            lastActivity: Date.now()
+          }
+        );
+        
+        // Start playback sync for this room
+        startPlaybackSync(roomCode);
+        
+        io.to(roomCode).emit('play-video', { currentTime });
+        socket.to(roomCode).emit('video-played', {
+          userId: socket.user.id,
+          username: socket.user.username,
+          currentTime
+        });
+        console.log(`The video is currently being played in room ${roomCode}.`);
+        console.log(`User ${socket.user.username} is currently watching.`);
+      } else {
+        socket.emit('error', { message: 'Only the host can control playback.' });
+      }
+    });
+
+    socket.on('pause-video', async ({ roomCode, currentTime }) => {
+      if (await isRoomHost(roomCode, socket.user.id)) {
+        // Update room status
+        await Room.updateOne(
+          { roomCode },
+          { 
+            isPlaying: false,
+            currentTime,
+            lastActivity: Date.now()
+          }
+        );
+        
+        // Stop playback sync for this room while paused
+        stopPlaybackSync(roomCode);
+        
+        io.to(roomCode).emit('pause-video', { currentTime });
+        socket.to(roomCode).emit('video-paused', {
+          userId: socket.user.id,
+          username: socket.user.username,
+          currentTime
+        });
+        console.log(`The video is currently paused in room ${roomCode}.`);
+        console.log(`User ${socket.user.username} is currently watching.`);
+      } else {
+        socket.emit('error', { message: 'Only the host can control playback.' });
+      }
+    });
+
+    socket.on('seek-video', async ({ roomCode, currentTime }) => {
+      if (await isRoomHost(roomCode, socket.user.id)) {
+        // Update room status
+        await Room.updateOne(
+          { roomCode },
+          { 
+            currentTime,
+            lastActivity: Date.now()
+          }
+        );
+        
+        // Restart playback sync after seeking
+        startPlaybackSync(roomCode);
+        
+        io.to(roomCode).emit('seek-video', { currentTime });
+        socket.to(roomCode).emit('video-seeked', {
+          userId: socket.user.id,
+          username: socket.user.username,
+          currentTime
+        });
+        console.log(`${socket.user.username} seeked video in room ${roomCode}`);
+      } else {
+        socket.emit('error', { message: 'Only the host can control playback.' });
+      }
+    });
+    // --- End playback synchronization handlers ---
     
     // Play video
     socket.on('play-video', async ({ roomCode, currentTime }) => {
@@ -557,68 +733,22 @@ function initializeSocket(server) {
     
     // Handle disconnection
     socket.on('disconnect', async () => {
-      console.log(`User disconnected: ${socket.user.username}`);
+      console.log(`User disconnected: ${socket.user?.username}`);
       
-      // If the user was in a room, handle cleanup
-      if (socket.currentRoom) {
-        try {
-          const roomCode = socket.currentRoom;
-          const room = await Room.findOne({ roomCode });
-          
-          if (room) {
-            // Don't immediately remove the user on disconnect
-            // This allows for reconnection without losing participant status
-            
-            // Notify others about temporary disconnection
-            socket.to(roomCode).emit('participant-inactive', {
-              userId: socket.user.id,
-              username: socket.user.username
-            });
-            
-            console.log(`${socket.user.username} disconnected from room ${roomCode}`);
-            console.log(`Currently ${room.participants.length} participants in room ${roomCode}`);
-            
-            // Set a timeout to remove the participant if they don't reconnect
-            setTimeout(async () => {
-              try {
-                // Check if the room still exists
-                const currentRoom = await Room.findOne({ roomCode });
-                if (!currentRoom) return;
-                
-                // Check if the user is still in the participants list
-                const isStillParticipant = currentRoom.participants.some(p => 
-                  p.userId.toString() === socket.user.id.toString()
-                );
-                
-                if (isStillParticipant) {
-                  // Check if the user is still disconnected (not reconnected)
-                  const sockets = await io.in(roomCode).fetchSockets();
-                  const isReconnected = sockets.some(s => 
-                    s.user && s.user.id.toString() === socket.user.id.toString()
-                  );
-                  
-                  if (!isReconnected) {
-                    // Remove the participant after timeout
-                    currentRoom.removeParticipant(socket.user.id);
-                    await currentRoom.save();
-                    
-                    // Notify others
-                    io.to(roomCode).emit('participant-left', {
-                      userId: socket.user.id,
-                      username: socket.user.username
-                    });
-                    
-                    console.log(`${socket.user.username} automatically removed from room ${roomCode} after disconnect timeout`);
-                    console.log(`Currently ${currentRoom.participants.length} participants in room ${roomCode}`);
-                  }
-                }
-              } catch (error) {
-                console.error('Error in disconnect timeout handler:', error);
-              }
-            }, 60000); // 1 minute timeout
+      // Clean up any rooms this user was in
+      if (socket.user) {
+        const rooms = await Room.find({ 'participants.userId': socket.user.id });
+        for (const room of rooms) {
+          // Stop playback sync if this was the last user
+          const remainingParticipants = room.participants.filter(
+            p => p.userId.toString() !== socket.user.id.toString()
+          );
+          if (remainingParticipants.length === 0) {
+            stopPlaybackSync(room.roomCode);
           }
-        } catch (error) {
-          console.error('Error handling disconnect:', error);
+          
+          console.log(`${socket.user.username} disconnected from room ${room.roomCode}`);
+          await handleParticipantLeft(room.roomCode, socket.user.id);
         }
       }
     });

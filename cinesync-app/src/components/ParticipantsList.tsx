@@ -108,9 +108,10 @@ const ParticipantUsername = styled.div`
 `;
 
 const ParticipantsList: React.FC<ParticipantsListProps> = ({ participants, isOpen, onClose }) => {
-  // Deduplicate participants by `userId`
+  // Filter out participants with undefined userId and deduplicate by userId
+  const validParticipants = participants.filter(p => p && p.userId);
   const uniqueParticipants = Array.from(
-    new Map(participants.map((p) => [p.userId, p])).values()
+    new Map(validParticipants.map((p) => [p.userId, p])).values()
   );
 
   return (
@@ -126,7 +127,7 @@ const ParticipantsList: React.FC<ParticipantsListProps> = ({ participants, isOpe
       </ParticipantsHeader>
       <ParticipantsListContainer>
         {uniqueParticipants.map((participant) => (
-          <ParticipantItem key={participant.userId}>
+          <ParticipantItem key={participant.userId?.toString() || `participant-${Math.random()}`}>
             <ParticipantAvatar>
               {participant.profilePicture ? (
                 <img src={participant.profilePicture} alt={participant.name || participant.username} />

@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useWatchRoomSocket } from './useWatchRoomSocket';
-import { RoomState } from '../context/RoomContext';
 
 interface UseWatchRoomProps {
   roomCode: string | undefined;
@@ -20,7 +19,6 @@ export const useWatchRoom = ({ roomCode }: UseWatchRoomProps) => {
   
   // Refs
   const lastSeekRef = useRef<number | null>(null);
-  const prevSourceKeyRef = useRef('');
   const localVideoSourceRef = useRef('');
 
   // Initialize the watch room socket with the initial room state

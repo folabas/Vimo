@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { useParams } from 'react-router-dom';
+import { useAuth } from '../hooks/useAuth';
 import Logo from '../components/Logo';
 import VideoPlayer from '../components/VideoPlayer';
 import VideoLibrary from '../components/VideoLibrary';
 import ParticipantsList from '../components/ParticipantsList';
 import { useWatchRoom } from '../hooks/useWatchRoom';
-import { RoomState, Message } from '../types/room';
 import {
   PageContainer,
   Header,
@@ -49,11 +49,11 @@ interface Props {}
 
 const WatchRoom: React.FC<Props> = () => {
   const { roomCode } = useParams<{ roomCode: string }>();
+  const { user } = useAuth();
   const [showParticipants, setShowParticipants] = useState(false);
   
   const {
     // State
-    isChatOpen,
     showVideoLibrary,
     chatInput,
     isCopied,
@@ -70,10 +70,6 @@ const WatchRoom: React.FC<Props> = () => {
     
     // Handlers
     handleToggleSubtitles,
-    handlePlay,
-    handlePause,
-    handleTimeUpdate,
-    handleSeek,
     handleSendMessage,
     handleCopyRoomCode,
     handleReloadRoom,
@@ -81,12 +77,29 @@ const WatchRoom: React.FC<Props> = () => {
     
     // Utils
     formatTime,
-    videoSourceLogic
+    videoSourceLogic,
+    emitPlay,
+    emitPause,
+    emitSeek
   } = useWatchRoom({ roomCode });
+
+  // Type-safe handlers for VideoPlayer props
+  const handlePlay = (currentTime: number) => {
+    emitPlay(currentTime);
+  };
+  const handlePause = (currentTime: number) => {
+    emitPause(currentTime);
+  };
+  const handleSeek = (currentTime: number) => {
+    emitSeek(currentTime);
+  };
+  const handleTimeUpdate = (currentTime: number) => {
+    // intentionally left empty
+  };
 
   // Render the video player based on the current state
   const memoizedVideoPlayer = (() => {
-    const { sourceToUse, hasValidMovie } = videoSourceLogic;
+    const { hasValidMovie } = videoSourceLogic;
     
     if (!hasValidMovie) {
       if (roomState.selectedMovie) {
@@ -123,13 +136,16 @@ const WatchRoom: React.FC<Props> = () => {
     
     return (
       <VideoPlayer
-        src={sourceToUse}
+        src={roomState.selectedMovie?.source || ''}
         isPlaying={roomState.isPlaying}
-        initialTime={roomState.currentTime}
+        currentTime={roomState.currentTime}
         onPlay={handlePlay}
         onPause={handlePause}
         onTimeUpdate={handleTimeUpdate}
+        onSeek={handleSeek}
         subtitlesEnabled={roomState.subtitlesEnabled}
+        controlsEnabled={roomState.isHost}
+        isHost={roomState.isHost}
       />
     );
   })();
@@ -181,6 +197,13 @@ const WatchRoom: React.FC<Props> = () => {
             {roomState.selectedMovie && (
               <MovieTitle>{roomState.selectedMovie.title}</MovieTitle>
             )}
+            <div style={{marginTop: '1rem', color: '#2e7d32', fontWeight: 'bold'}}>
+              {roomState.isPlaying
+                ? `The video is currently being played in room ${roomCode}.`
+                : `The video is currently paused in room ${roomCode}.`}
+              <br />
+              {`User ${user?.username || 'Unknown'} is currently watching.`}
+            </div>
             <div className="flex items-center justify-center gap-2">
               <button
                 className="flex items-center justify-center gap-1 rounded-md bg-primary px-3 py-1 text-sm text-white"

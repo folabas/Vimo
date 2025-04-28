@@ -1,8 +1,6 @@
-import React, { useState, useLayoutEffect, useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { theme } from '../styles/theme';
 import { useRoom } from '../hooks/useRoom';
-import { uploadVideo, getUserVideos, videoToMovie } from '../services/videoService';
 import { usePickMovie } from '../hooks/usePickMovie';
 import {
   PageContainer,
@@ -75,18 +73,15 @@ const sampleMovies = [
 
 const PickMovie: React.FC = () => {
   const navigate = useNavigate();
-  const { createRoom } = useRoom();
+  const {  } = useRoom();
   const {
     selectedMovie,
-    setSelectedMovie,
     isPrivate,
     setIsPrivate,
     subtitlesEnabled,
     setSubtitlesEnabled,
     isUploading,
     uploadProgress,
-    userVideos,
-    setUserVideos,
     fileInputRef,
     loadUserVideos,
     handleFileChange,

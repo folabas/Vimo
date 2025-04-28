@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { socketService, SocketEvents } from '../services/api/socketService';
 import { RoomState, Message, Participant, Movie } from '../types/room';
 
@@ -25,7 +24,6 @@ interface UseWatchRoomSocketResult {
   isHost: boolean;
   isPlaying: boolean;
   currentTime: number;
-  localCurrentTime: number;
   emitPlay: (time: number) => void;
   emitPause: (time: number) => void;
   emitTimeUpdate: (time: number) => void;
@@ -44,7 +42,6 @@ export const useWatchRoomSocket = ({
   roomCode,
   initialRoomState,
 }: UseWatchRoomSocketProps): UseWatchRoomSocketResult => {
-  const navigate = useNavigate();
   
   // Initialize with a safe default for selectedMovie to prevent null references
   const safeInitialState = {
@@ -70,16 +67,13 @@ export const useWatchRoomSocket = ({
   ]);
   const [isWaitingForParticipants, setIsWaitingForParticipants] = useState(false);
   const [showWaitingOverlay, setShowWaitingOverlay] = useState(true);
-  const [waitingTimeLeft, setWaitingTimeLeft] = useState(60); // 60 seconds countdown
   const [isPlaying, setIsPlaying] = useState(initialRoomState.isPlaying);
   const [currentTime, setCurrentTime] = useState(initialRoomState.currentTime);
-  const [localCurrentTime, setLocalCurrentTime] = useState(initialRoomState.currentTime);
   
   // Refs to track component mounted state and for cleanup
   const isMountedRef = useRef(true);
   const controllerRef = useRef(new AbortController());
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const hasSetupRef = useRef(false);
 
   const handleRoomStateUpdate = useCallback((newState: RoomState) => {
     if (newState.selectedMovie) {
@@ -96,13 +90,6 @@ export const useWatchRoomSocket = ({
       ...newState,
     }));
   }, [setRoomState]);
-
-  const handleChatMessage = useCallback((message: Message) => {
-    if (!isMountedRef.current || controllerRef.current.signal.aborted) return;
-
-    console.log('Received chat message:', message); // Debug log
-    setMessages((prev) => [...prev, message]);
-  }, []);
 
   const handleParticipantJoined = useCallback((participant: Participant) => {
     setRoomState((prev) => {
@@ -147,11 +134,23 @@ export const useWatchRoomSocket = ({
     }));
   }, [setRoomState]);
 
-  // Socket event emitters - memoized to prevent recreation
-  const emitPlay = useCallback((time: number) => socketService.emitPlay(time), []);
-  const emitPause = useCallback((time: number) => socketService.emitPause(time), []);
+  // --- Only host emits playback events ---
+  const emitPlay = useCallback((time: number) => {
+    if (roomCode) {
+      socketService.emitPlay({ roomCode, currentTime: time }, roomState.isHost);
+    }
+  }, [roomState.isHost, roomCode]);
+  const emitPause = useCallback((time: number) => {
+    if (roomCode) {
+      socketService.emitPause({ roomCode, currentTime: time }, roomState.isHost);
+    }
+  }, [roomState.isHost, roomCode]);
+  const emitSeek = useCallback((time: number) => {
+    if (roomCode) {
+      socketService.emitSeek({ roomCode, currentTime: time }, roomState.isHost);
+    }
+  }, [roomState.isHost, roomCode]);
   const emitTimeUpdate = useCallback((time: number) => socketService.emitTimeUpdate(time), []);
-  const emitSeek = useCallback((time: number) => socketService.emitSeek(time), []);
   const emitSelectVideo = useCallback((movie: Movie) => socketService.selectVideo(movie), []);
   const emitToggleSubtitles = useCallback(() => socketService.toggleSubtitles(roomState.subtitlesEnabled), [roomState.subtitlesEnabled]);
   const emitChatMessage = useCallback((message: string) => {
@@ -180,68 +179,135 @@ export const useWatchRoomSocket = ({
     }));
   }, [setRoomState]);
 
-  // Setup and cleanup function
-  const setupRoom = useCallback(async () => {
-    if (connectionTracker.currentRoom === roomCode) {
-      console.log(`Already connected to room: ${roomCode}`);
-      return;
-    }
-    connectionTracker.currentRoom = roomCode;
-
-    try {
-      // Register event handlers
-      await socketService.on(SocketEvents.ROOM_STATE_UPDATE, handleRoomStateUpdate);
-      await socketService.on(SocketEvents.ROOM_JOINED, handleRoomJoined);
-
-      // Join the room
-      await socketService.joinRoom(roomCode);
-      console.log(`Successfully joined room: ${roomCode}`);
-    } catch (error) {
-      console.error('Error setting up room:', error);
-      connectionTracker.currentRoom = null;
-    }
-  }, [roomCode, handleRoomStateUpdate, handleRoomJoined]);
-
   // Start countdown for waiting overlay
   const startWaitingCountdown = useCallback(() => {
     if (countdownIntervalRef.current) {
       clearInterval(countdownIntervalRef.current);
     }
     
-    setWaitingTimeLeft(60);
-    
     countdownIntervalRef.current = setInterval(() => {
-      setWaitingTimeLeft((prev) => {
-        if (prev <= 1) {
-          if (countdownIntervalRef.current) {
-            clearInterval(countdownIntervalRef.current);
-            countdownIntervalRef.current = null;
-          }
-          return 0;
-        }
-        return prev - 1;
-      });
+      // Removed countdown logic
     }, 1000);
   }, []);
 
+  // Setup room function
+  const setupRoom = useCallback(() => {
+    console.log(`[useWatchRoomSocket] Setting up room ${roomCode}, socket connected:`, socketService.isConnected());
+    
+    // Register event handlers
+    socketService.on(SocketEvents.ROOM_STATE_UPDATE, handleRoomStateUpdate);
+    socketService.on(SocketEvents.ROOM_JOINED, handleRoomJoined);
+    
+    // Join the room
+    socketService.joinRoom(roomCode).then((response: any) => {
+      console.log(`[useWatchRoomSocket] Successfully joined room ${roomCode}:`, response);
+      
+      // Update room state with response data
+      if (response) {
+        setRoomState((prev) => ({
+          ...prev,
+          ...response,
+          selectedMovie: (response && response.selectedMovie) || prev.selectedMovie,
+        }));
+        
+        // Start the waiting countdown if needed
+        if (response.isWaiting) {
+          setIsWaitingForParticipants(true);
+          startWaitingCountdown();
+        } else {
+          setShowWaitingOverlay(false);
+        }
+        
+        // Set initial playback state
+        setIsPlaying(response.isPlaying || false);
+        if (typeof response.currentTime === 'number') {
+          setCurrentTime(response.currentTime);
+        }
+      }
+    }).catch((error) => {
+      console.error(`[useWatchRoomSocket] Error joining room ${roomCode}:`, error);
+    });
+  }, [roomCode, handleRoomStateUpdate, handleRoomJoined, startWaitingCountdown]);
+
   // Setup socket connection and event listeners
   useEffect(() => {
-    if (!roomCode) return;
-
-    console.log(`Setting up socket for room: ${roomCode}`);
-    setupRoom();
-
-    // Listen for chat messages
-    socketService.onChatMessage((message: Message) => {
-      console.log('Chat message received:', message); // Debug log
-      setMessages((prev) => [...prev, message]);
+    console.log(`[useWatchRoomSocket] useEffect for socket setup, roomCode: ${roomCode}`);
+    
+    // Check if already connected to this room
+    if (connectionTracker.currentRoom === roomCode && connectionTracker.hasJoined) {
+      console.log(`[useWatchRoomSocket] Already connected to room ${roomCode}`);
+      return;
+    }
+    
+    // Prevent double connections in React strict mode
+    if (connectionTracker.isConnecting) {
+      console.log(`[useWatchRoomSocket] Connection already in progress`);
+      return;
+    }
+    
+    connectionTracker.isConnecting = true;
+    connectionTracker.currentRoom = roomCode;
+    
+    // Initialize socket connection
+    socketService.initialize().then(() => {
+      console.log(`[useWatchRoomSocket] Socket initialized, setting up room ${roomCode}`);
+      connectionTracker.hasJoined = true;
+      setupRoom();
+    }).catch((error) => {
+      console.error(`[useWatchRoomSocket] Socket initialization error:`, error);
+      connectionTracker.isConnecting = false;
+      connectionTracker.currentRoom = null;
     });
-
+    
     // Listen for participant-joined event
     socketService.onParticipantJoined(handleParticipantJoined);
     
     // Listen for participant-left event
     socketService.onParticipantLeft(handleParticipantLeft);
+
+    // --- Playback synchronization: listen for host events ---
+    const onPlayVideo = ({ currentTime }: { currentTime: number }) => {
+      console.log('[Socket] Received play-video event, setting isPlaying=true, currentTime:', currentTime);
+      setIsPlaying(true);
+      setCurrentTime(currentTime);
+    };
+    const onPauseVideo = ({ currentTime }: { currentTime: number }) => {
+      console.log('[Socket] Received pause-video event, setting isPlaying=false, currentTime:', currentTime);
+      setIsPlaying(false);
+      setCurrentTime(currentTime);
+    };
+    const onSeekVideo = ({ currentTime }: { currentTime: number }) => {
+      console.log('[Socket] Received seek-video event, setting currentTime:', currentTime);
+      setCurrentTime(currentTime);
+    };
+    const onPlaybackSync = ({ currentTime }: { currentTime: number }) => {
+      console.log('[Socket] Received playback-sync event, updating currentTime:', currentTime);
+      // Only update time if we're playing (to avoid overriding paused state)
+      if (isPlaying) {
+        setCurrentTime(currentTime);
+      }
+    };
+    
+    // Register event handlers with detailed logging
+    console.log('[useWatchRoomSocket] Registering play-video event handler');
+    socketService.on('play-video', onPlayVideo).catch(err => {
+      console.error('[useWatchRoomSocket] Failed to register play-video handler:', err);
+    });
+    
+    console.log('[useWatchRoomSocket] Registering pause-video event handler');
+    socketService.on('pause-video', onPauseVideo).catch(err => {
+      console.error('[useWatchRoomSocket] Failed to register pause-video handler:', err);
+    });
+    
+    console.log('[useWatchRoomSocket] Registering seek-video event handler');
+    socketService.on('seek-video', onSeekVideo).catch(err => {
+      console.error('[useWatchRoomSocket] Failed to register seek-video handler:', err);
+    });
+    
+    console.log('[useWatchRoomSocket] Registering playback-sync event handler');
+    socketService.on('playback-sync', onPlaybackSync).catch(err => {
+      console.error('[useWatchRoomSocket] Failed to register playback-sync handler:', err);
+    });
 
     return () => {
       console.log('Cleaning up socket connection');
@@ -251,6 +317,10 @@ export const useWatchRoomSocket = ({
       connectionTracker.currentRoom = null;
 
       // Clean up listeners on unmount
+      socketService.off('play-video', onPlayVideo);
+      socketService.off('pause-video', onPauseVideo);
+      socketService.off('seek-video', onSeekVideo);
+      socketService.off('playback-sync', onPlaybackSync);
       socketService.off(SocketEvents.PARTICIPANT_JOINED, handleParticipantJoined);
       socketService.off(SocketEvents.PARTICIPANT_LEFT, handleParticipantLeft);
     };
@@ -259,14 +329,10 @@ export const useWatchRoomSocket = ({
   // Debug effect to log state changes
   useEffect(() => {
     console.log('Room state in hook:', {
-      hasMovie: !!roomState.selectedMovie,
-      movieId: roomState.selectedMovie?.id,
-      source: roomState.selectedMovie?.source,
-      participants: roomState.participants.length,
-      isPlaying: roomState.isPlaying,
-      currentTime: roomState.currentTime
+      roomState,
+      isPlaying
     });
-  }, [roomState]);
+  }, [roomState, isPlaying]);
 
   return {
     roomState,
@@ -277,7 +343,6 @@ export const useWatchRoomSocket = ({
     isHost: roomState.isHost,
     isPlaying,
     currentTime,
-    localCurrentTime,
     emitPlay,
     emitPause,
     emitTimeUpdate,

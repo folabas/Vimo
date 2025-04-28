@@ -240,9 +240,6 @@ const Tab = styled.button<{ active: boolean }>`
  * VideoLibrary component displays a grid of user uploaded videos
  */
 const VideoLibrary: React.FC<VideoLibraryProps> = ({ roomCode, onSelectVideo, selectedVideoId }) => {
-  // State
-  const { user } = useAuth();
-  
   // Initialize window.__VIDEO_CACHE if it doesn't exist
   if (typeof window !== 'undefined' && !window.__VIDEO_CACHE) {
     window.__VIDEO_CACHE = {};
@@ -253,7 +250,6 @@ const VideoLibrary: React.FC<VideoLibraryProps> = ({ roomCode, onSelectVideo, se
   const [activeTab, setActiveTab] = useState<'my' | 'room'>(roomCode ? 'room' : 'my');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [retryCount, setRetryCount] = useState(0);
   
   // Refs to track request state
   const fetchingRef = useRef(false);
@@ -277,7 +273,6 @@ const VideoLibrary: React.FC<VideoLibraryProps> = ({ roomCode, onSelectVideo, se
   
   // Function to fetch videos with caching
   const fetchVideos = useCallback(async (forceRefresh = false) => {
-    // Clear previous errors
     setError(null);
     setIsLoading(true);
     
@@ -315,7 +310,7 @@ const VideoLibrary: React.FC<VideoLibraryProps> = ({ roomCode, onSelectVideo, se
     } finally {
       setIsLoading(false);
     }
-  }, [activeTab, roomCode]);
+  }, [activeTab, roomCode, cacheKey]);
   
   // Initial fetch
   useEffect(() => {
@@ -339,7 +334,6 @@ const VideoLibrary: React.FC<VideoLibraryProps> = ({ roomCode, onSelectVideo, se
   
   // Handle retry when error occurs
   const handleRetry = () => {
-    setRetryCount(count => count + 1);
     fetchVideos(true); // Force refresh on retry
   };
 
