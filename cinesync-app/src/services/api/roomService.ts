@@ -114,5 +114,5 @@ export const getRoomDetails = async (roomCode: string): Promise<Room> => {
  * @returns Promise with the leave room response
  */
 export const leaveRoom = async (roomCode: string): Promise<{ message: string }> => {
-  return apiClient.post<{ message: string }>(`/rooms/${roomCode}/leave`, {});
+  return apiClient.post<{ message: string }>(`/api/rooms/${roomCode}/leave`, {});
 };
