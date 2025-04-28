@@ -96,7 +96,7 @@ export const createRoom = async (
  * @returns Promise with the join room response
  */
 export const joinRoom = async (roomCode: string): Promise<JoinRoomResponse> => {
-  return apiClient.post<JoinRoomResponse>('/rooms/join', { roomCode });
+  return apiClient.post<JoinRoomResponse>('/api/rooms/join', { roomCode });
 };
 
 /**

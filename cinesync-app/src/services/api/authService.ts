@@ -31,7 +31,7 @@ export const register = async (
   password: string
 ): Promise<AuthResponse> => {
   const response = await apiClient.post<AuthResponse>(
-    '/auth/register',
+    '/api/auth/register',
     { username, email, password },
     false
   );
@@ -54,7 +54,7 @@ export const login = async (
   password: string
 ): Promise<AuthResponse> => {
   const response = await apiClient.post<AuthResponse>(
-    '/auth/login',
+    '/api/auth/login',
     { email, password },
     false
   );

@@ -61,7 +61,7 @@ export const uploadVideo = async (
     };
     
     // Make the upload request
-    const response = await axios.post(`${API_URL}/videos/upload`, formData, config);
+    const response = await axios.post(`${API_URL}/api/videos/upload`, formData, config);
     
     // Log success
     console.log('Video uploaded successfully:', response.data);
@@ -86,7 +86,7 @@ export const getUserVideos = async (): Promise<Video[]> => {
   
   try {
     console.log('Fetching user videos...');
-    const response = await axios.get(`${API_URL}/videos/user`, {
+    const response = await axios.get(`${API_URL}/api/videos/user`, {
       headers: { 'x-auth-token': token }
     });
     
@@ -110,7 +110,7 @@ export const getVideoById = async (videoId: string): Promise<Video> => {
   }
   
   try {
-    const response = await axios.get(`${API_URL}/videos/${videoId}`, {
+    const response = await axios.get(`${API_URL}/api/videos/${videoId}`, {
       headers: { 'x-auth-token': token }
     });
     
@@ -133,7 +133,7 @@ export const deleteVideo = async (videoId: string): Promise<{ message: string }>
   }
   
   try {
-    const response = await axios.delete(`${API_URL}/videos/${videoId}`, {
+    const response = await axios.delete(`${API_URL}/api/videos/${videoId}`, {
       headers: { 'x-auth-token': token }
     });
     
@@ -254,7 +254,7 @@ export const shareVideoWithRoom = async (videoId: string, roomCode: string): Pro
   }
   
   try {
-    const response = await axios.post(`${API_URL}/videos/share`, 
+    const response = await axios.post(`${API_URL}/api/videos/share`, 
       { videoId, roomCode },
       { headers: { 'x-auth-token': token } }
     );
@@ -279,7 +279,7 @@ export const getRoomVideos = async (roomCode: string): Promise<Video[]> => {
   
   try {
     console.log(`Fetching videos for room: ${roomCode}`);
-    const response = await axios.get(`${API_URL}/rooms/${roomCode}/videos`, {
+    const response = await axios.get(`${API_URL}/api/rooms/${roomCode}/videos`, {
       headers: { 'x-auth-token': token }
     });
     
@@ -303,7 +303,7 @@ export const getPublicVideos = async (): Promise<Video[]> => {
   
   try {
     console.log('Fetching public videos...');
-    const response = await axios.get(`${API_URL}/videos/public`, {
+    const response = await axios.get(`${API_URL}/api/videos/public`, {
       headers: { 'x-auth-token': token }
     });
     
@@ -333,7 +333,7 @@ export const updateVideo = async (
   try {
     console.log(`Updating video ${videoId}:`, updates);
     const response = await axios.put(
-      `${API_URL}/videos/${videoId}`,
+      `${API_URL}/api/videos/${videoId}`,
       updates,
       { headers: { 'x-auth-token': token } }
     );
