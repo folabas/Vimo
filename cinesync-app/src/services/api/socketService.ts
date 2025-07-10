@@ -28,16 +28,73 @@ export enum SocketEvents {
   REACTION_RECEIVED = 'reaction-received',
   PARTICIPANT_JOINED = 'participant-joined',
   PARTICIPANT_LEFT = 'participant-left',
-  ERROR = 'error'
+  ERROR = 'error',
+  
+  // WebRTC Signaling Events
+  OFFER = 'offer',
+  ANSWER = 'answer',
+  ICE_CANDIDATE = 'ice-candidate'
 }
 
+// Types for WebRTC signaling
+type OfferData = {
+  offer: RTCSessionDescriptionInit;
+  to: string;
+};
+
+type AnswerData = {
+  answer: RTCSessionDescriptionInit;
+  to: string;
+};
+
+type IceCandidateData = {
+  candidate: RTCIceCandidateInit;
+  to: string;
+};
+
 // Socket service singleton
-class SocketService {
+export class SocketService {
   private socket: Socket | null = null;
   private listeners: Map<string, Function[]> = new Map();
   private currentRoom: string | null = null;
   private connectionPromise: Promise<void> | null = null;
   private isConnecting = false;
+  // WebRTC Signaling Methods
+  public sendOffer(offer: RTCSessionDescriptionInit, to: string): void {
+    this.socket?.emit(SocketEvents.OFFER, { offer, to });
+  }
+
+  public sendAnswer(answer: RTCSessionDescriptionInit, to: string): void {
+    this.socket?.emit(SocketEvents.ANSWER, { answer, to });
+  }
+
+  public sendIceCandidate(candidate: RTCIceCandidateInit, to: string): void {
+    this.socket?.emit(SocketEvents.ICE_CANDIDATE, { candidate, to });
+  }
+
+  public onOffer(callback: (data: { offer: RTCSessionDescriptionInit; from: string }) => void): void {
+    this.socket?.on(SocketEvents.OFFER, (data: any) => {
+      callback({ offer: data.offer, from: data.from });
+    });
+  }
+
+  public onAnswer(callback: (data: { answer: RTCSessionDescriptionInit; from: string }) => void): void {
+    this.socket?.on(SocketEvents.ANSWER, (data: any) => {
+      callback({ answer: data.answer, from: data.from });
+    });
+  }
+
+  public onIceCandidate(callback: (data: { candidate: RTCIceCandidateInit; from: string }) => void): void {
+    this.socket?.on(SocketEvents.ICE_CANDIDATE, (data: any) => {
+      callback({ candidate: data.candidate, from: data.from });
+    });
+  }
+
+  public offWebRTCEvents(): void {
+    this.socket?.off(SocketEvents.OFFER);
+    this.socket?.off(SocketEvents.ANSWER);
+    this.socket?.off(SocketEvents.ICE_CANDIDATE);
+  }
   
   /**
    * Initialize the socket connection

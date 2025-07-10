@@ -61,16 +61,38 @@ export const uploadVideo = async (
     };
     
     // Make the upload request
-    const response = await axios.post(`${API_URL}/api/videos/upload`, formData, config);
+    const response = await axios.post(`${API_URL}/videos/upload`, formData, config);
     
     // Log success
     console.log('Video uploaded successfully:', response.data);
     
-    return response.data;
+    // Ensure we have a valid video URL in the response
+    if (!response.data?.video?.videoUrl) {
+      console.error('Invalid response format - missing video URL:', response.data);
+      throw new Error('Server returned an invalid response - missing video URL');
+    }
+    
+    return response.data.video;
   } catch (error: any) {
     // Log error details
-    console.error('Video upload failed:', error.response?.data || error.message);
-    throw error;
+    console.error('Video upload failed:', {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status,
+      config: error.config
+    });
+    
+    // Create a more user-friendly error message
+    let errorMessage = 'Failed to upload video';
+    if (error.response?.data?.message) {
+      errorMessage = error.response.data.message;
+    } else if (error.code === 'ECONNABORTED') {
+      errorMessage = 'Request timed out. Please check your connection and try again.';
+    } else if (!navigator.onLine) {
+      errorMessage = 'No internet connection. Please check your network and try again.';
+    }
+    
+    throw new Error(errorMessage);
   }
 };
 
@@ -80,21 +102,49 @@ export const uploadVideo = async (
  */
 export const getUserVideos = async (): Promise<Video[]> => {
   const token = getToken();
+  
   if (!token) {
-    throw new Error('Authentication required');
+    console.error('No authentication token found');
+    // Clear any invalid token and redirect to login
+    localStorage.removeItem('vimo_auth_token');
+    window.location.href = '/login';
+    throw new Error('Authentication required. Please log in again.');
   }
   
   try {
     console.log('Fetching user videos...');
-    const response = await axios.get(`${API_URL}/api/videos/user`, {
-      headers: { 'x-auth-token': token }
+    const response = await axios.get(`${API_URL}/videos/user`, {
+      headers: { 
+        'x-auth-token': token,
+        'Content-Type': 'application/json'
+      },
+      validateStatus: (status) => status < 500 // Don't throw for 401/403
     });
+
+    if (response.status === 401 || response.status === 403) {
+      // Token is invalid or expired
+      console.error('Authentication failed:', response.data?.message || 'Invalid token');
+      localStorage.removeItem('vimo_auth_token');
+      window.location.href = '/login';
+      throw new Error('Your session has expired. Please log in again.');
+    }
     
-    console.log(`Found ${response.data.length} user videos`);
-    return response.data;
+    if (response.status !== 200) {
+      throw new Error(response.data?.message || 'Failed to fetch videos');
+    }
+    
+    console.log(`Found ${response.data?.length || 0} user videos`);
+    return response.data || [];
   } catch (error: any) {
-    console.error('Failed to fetch user videos:', error.response?.data || error.message);
-    throw error;
+    const errorMessage = error.response?.data?.message || error.message;
+    console.error('Failed to fetch user videos:', errorMessage);
+    
+    if (error.response?.status === 401 || error.response?.status === 403) {
+      localStorage.removeItem('vimo_auth_token');
+      window.location.href = '/login';
+    }
+    
+    throw new Error(errorMessage || 'Failed to fetch videos. Please try again.');
   }
 };
 
@@ -212,30 +262,32 @@ export const videoToMovie = (video: Video): Movie => {
       console.error('Invalid video URL format:', videoUrl);
     }
   }
-    
-  // Create the movie object
+  
+  // Helper function to get a default thumbnail URL
+  const getDefaultThumbnail = () => {
+    return 'https://via.placeholder.com/320x180?text=No+Thumbnail';
+  };
+
+  // Create movie object from video
   const movie: Movie = {
     id: video._id || `temp-${Date.now()}`,
-    title: video.title || 'Untitled',
-    source: videoUrl || '',
-    videoUrl: videoUrl || '', // Also set videoUrl for server compatibility
-    thumbnail: video.thumbnailUrl || '',
-    duration: formattedDuration
+    title: video.title || 'Untitled Video',
+    source: video.videoUrl || '',
+    videoUrl: video.videoUrl || '',
+    thumbnail: video.thumbnailUrl || getDefaultThumbnail(),
+    duration: video.duration || 0
   };
   
-  console.log('Created movie object:', JSON.stringify({
-    id: movie.id,
-    title: movie.title,
-    source: movie.source,
-    videoUrl: movie.videoUrl // Log videoUrl as well
-  }, null, 2));
+  console.log('Created movie object:', JSON.stringify(movie, null, 2));
   
-  // Cache the conversion result with timestamp
-  if (videoId) {
-    conversionCache.set(videoId, { 
-      movie, 
-      timestamp: now 
+  // Cache the result if we have a valid ID
+  if (video._id) {
+    conversionCache.set(video._id, {
+      movie,
+      timestamp: Date.now()
     });
+  } else {
+    console.warn('Video missing ID, skipping cache:', video);
   }
   
   return movie;

@@ -30,26 +30,61 @@ export function usePickMovie(sampleMovies: any[]) {
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    
+    // Validate file type and size
+    const validTypes = ['video/mp4', 'video/webm', 'video/quicktime'];
+    const maxSize = 100 * 1024 * 1024; // 100MB
+    
+    if (!validTypes.includes(file.type)) {
+      alert('Please upload a valid video file (MP4, WebM, or QuickTime)');
+      return;
+    }
+    
+    if (file.size > maxSize) {
+      alert('Video file is too large. Maximum size is 100MB');
+      return;
+    }
+    
     setIsUploading(true);
     setUploadProgress(0);
+    
     try {
+      console.log('Starting video upload...');
       const uploadedVideo = await uploadVideo(
         file,
         file.name.split('.')[0], // Use filename as title
         '', // No description for now
-        (progress) => setUploadProgress(progress)
+        (progress) => {
+          console.log(`Upload progress: ${progress}%`);
+          setUploadProgress(progress);
+        }
       );
+      
+      console.log('Video upload completed, processing response:', uploadedVideo);
+      
+      if (!uploadedVideo || !uploadedVideo.videoUrl) {
+        throw new Error('Invalid video data received from server');
+      }
+      
       const movieFromVideo = videoToMovie(uploadedVideo);
+      console.log('Converted to movie object:', movieFromVideo);
+      
+      // Update state with the new video
       setUserVideos(prev => [...prev, movieFromVideo]);
       setSelectedMovie(movieFromVideo as typeof sampleMovies[0]);
+      
+      // Show success message
+      alert('Video uploaded successfully!');
+      
+    } catch (error: any) {
+      console.error('Video upload failed:', error);
+      alert(error.message || 'Failed to upload video. Please try again.');
+    } finally {
+      // Reset states
       setIsUploading(false);
       setUploadProgress(0);
+      // Clear the file input
       if (fileInputRef.current) fileInputRef.current.value = '';
-    } catch (error) {
-      console.error('Failed to upload video:', error);
-      setIsUploading(false);
-      setUploadProgress(0);
-      alert('Failed to upload video. Please try again.');
     }
   };
 

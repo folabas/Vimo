@@ -83,7 +83,7 @@ export const createRoom = async (
   isPrivate: boolean,
   subtitlesEnabled: boolean
 ): Promise<CreateRoomResponse> => {
-  return apiClient.post<CreateRoomResponse>('/api/rooms', {
+  return apiClient.post<CreateRoomResponse>('/rooms', {
     movie,
     isPrivate,
     subtitlesEnabled,
@@ -96,7 +96,7 @@ export const createRoom = async (
  * @returns Promise with the join room response
  */
 export const joinRoom = async (roomCode: string): Promise<JoinRoomResponse> => {
-  return apiClient.post<JoinRoomResponse>('/api/rooms/join', { roomCode });
+  return apiClient.post<JoinRoomResponse>('/rooms/join', { roomCode });
 };
 
 /**
@@ -105,7 +105,7 @@ export const joinRoom = async (roomCode: string): Promise<JoinRoomResponse> => {
  * @returns Promise with the room details
  */
 export const getRoomDetails = async (roomCode: string): Promise<Room> => {
-  return apiClient.get<Room>(`/api/rooms/${roomCode}`);
+  return apiClient.get<Room>(`/rooms/${roomCode}`);
 };
 
 /**
@@ -114,5 +114,5 @@ export const getRoomDetails = async (roomCode: string): Promise<Room> => {
  * @returns Promise with the leave room response
  */
 export const leaveRoom = async (roomCode: string): Promise<{ message: string }> => {
-  return apiClient.post<{ message: string }>(`/api/rooms/${roomCode}/leave`, {});
+  return apiClient.post<{ message: string }>(`/rooms/${roomCode}/leave`, {});
 };
