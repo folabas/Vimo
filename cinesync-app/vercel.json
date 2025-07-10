@@ -4,10 +4,32 @@
     {
       "src": "package.json",
       "use": "@vercel/static-build",
-      "config": { 
+      "config": {
         "distDir": "build",
-        "includeFiles": ["build/_redirects"]
+        "cleanUrls": true
       }
+    }
+  ],
+  "routes": [
+    {
+      "src": "^/static/(.*)",
+      "dest": "/static/$1"
+    },
+    {
+      "src": "^/favicon.ico",
+      "dest": "/favicon.ico"
+    },
+    {
+      "src": "^/manifest.json",
+      "dest": "/manifest.json"
+    },
+    {
+      "src": "^/logo(?:192|512).png",
+      "dest": "/logo$1.png"
+    },
+    {
+      "src": "^/.*",
+      "dest": "/index.html"
     }
   ]
 }
