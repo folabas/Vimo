@@ -1,9 +1,5 @@
 import { apiClient } from './apiClient';
 
-// Token storage key
-const TOKEN_KEY = 'vimo_auth_token';
-const USER_KEY = 'vimo_user';
-
 // User interface
 export interface User {
   id: string;
@@ -12,33 +8,23 @@ export interface User {
   profilePicture?: string;
 }
 
-// Auth response interface
-interface AuthResponse {
-  token: string;
-  user: User;
-}
-
 /**
  * Register a new user
  * @param username - Username
  * @param email - Email
  * @param password - Password
- * @returns Promise with the auth response
+ * @returns Promise with the user data
  */
 export const register = async (
   username: string,
   email: string,
   password: string
-): Promise<AuthResponse> => {
-  const response = await apiClient.post<AuthResponse>(
+): Promise<{ user: User }> => {
+  const response = await apiClient.post<{ user: User }>(
     '/api/auth/register',
     { username, email, password },
     false
   );
-  
-  // Store token and user
-  localStorage.setItem(TOKEN_KEY, response.token);
-  localStorage.setItem(USER_KEY, JSON.stringify(response.user));
   
   return response;
 };
@@ -47,54 +33,58 @@ export const register = async (
  * Login a user
  * @param email - Email
  * @param password - Password
- * @returns Promise with the auth response
+ * @returns Promise with the user data
  */
 export const login = async (
   email: string,
   password: string
-): Promise<AuthResponse> => {
-  const response = await apiClient.post<AuthResponse>(
+): Promise<{ user: User }> => {
+  const response = await apiClient.post<{ user: User }>(
     '/api/auth/login',
     { email, password },
     false
   );
-  
-  // Store token and user
-  localStorage.setItem(TOKEN_KEY, response.token);
-  localStorage.setItem(USER_KEY, JSON.stringify(response.user));
   
   return response;
 };
 
 /**
  * Logout the current user
+ * @returns Promise that resolves when logout is complete
  */
-export const logout = (): void => {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(USER_KEY);
+export const logout = async (): Promise<void> => {
+  try {
+    // The second parameter is the request body (empty object) and the third is for options
+    await apiClient.post('/api/auth/logout', {}, false);
+  } catch (error) {
+    console.error('Logout error:', error);
+    // Even if the request fails, we still want to clear the local state
+  }
 };
 
 /**
- * Get the current user
- * @returns User object or null
+ * Get the current user from the server
+ * @returns Promise with the current user or null if not authenticated
  */
-export const getCurrentUser = (): User | null => {
-  const userJson = localStorage.getItem(USER_KEY);
-  return userJson ? JSON.parse(userJson) : null;
-};
-
-/**
- * Get the auth token
- * @returns Token string or null
- */
-export const getToken = (): string | null => {
-  return localStorage.getItem(TOKEN_KEY);
+export const getCurrentUser = async (): Promise<User | null> => {
+  try {
+    const response = await apiClient.get<{ user: User | null }>('/api/auth/user');
+    return response.user;
+  } catch (error) {
+    console.error('Failed to fetch current user:', error);
+    return null;
+  }
 };
 
 /**
  * Check if user is authenticated
- * @returns Boolean indicating if user is authenticated
+ * @returns Promise that resolves to true if user is authenticated
  */
-export const isAuthenticated = (): boolean => {
-  return !!getToken();
+export const isAuthenticated = async (): Promise<boolean> => {
+  try {
+    const user = await getCurrentUser();
+    return !!user;
+  } catch (error) {
+    return false;
+  }
 };

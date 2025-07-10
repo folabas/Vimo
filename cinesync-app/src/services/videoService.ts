@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { getToken } from './api/authService';
+import { isAuthenticated } from './api/authService';
 import { Movie } from '../types/room';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
@@ -31,24 +31,23 @@ export const uploadVideo = async (
   description: string = '',
   onProgress?: (progress: number) => void
 ): Promise<Video> => {
-  const token = getToken();
-  if (!token) {
+  if (!isAuthenticated()) {
     throw new Error('Authentication required');
   }
-  
+
   const formData = new FormData();
   formData.append('video', file);
   formData.append('title', title);
   formData.append('description', description);
-  
+
   try {
     // Log the upload attempt
     console.log(`Uploading video: ${title} (${Math.round(file.size / 1024 / 1024 * 100) / 100} MB)`);
-    
+
     // Create upload config with progress tracking
     const config = {
-      headers: { 
-        'x-auth-token': token,
+      withCredentials: true,
+      headers: {
         'Content-Type': 'multipart/form-data'
       },
       onUploadProgress: (progressEvent: any) => {
@@ -59,19 +58,19 @@ export const uploadVideo = async (
         }
       }
     };
-    
+
     // Make the upload request
     const response = await axios.post(`${API_URL}/videos/upload`, formData, config);
-    
+
     // Log success
     console.log('Video uploaded successfully:', response.data);
-    
+
     // Ensure we have a valid video URL in the response
     if (!response.data?.video?.videoUrl) {
       console.error('Invalid response format - missing video URL:', response.data);
       throw new Error('Server returned an invalid response - missing video URL');
     }
-    
+
     return response.data.video;
   } catch (error: any) {
     // Log error details
@@ -81,7 +80,7 @@ export const uploadVideo = async (
       status: error.response?.status,
       config: error.config
     });
-    
+
     // Create a more user-friendly error message
     let errorMessage = 'Failed to upload video';
     if (error.response?.data?.message) {
@@ -91,7 +90,7 @@ export const uploadVideo = async (
     } else if (!navigator.onLine) {
       errorMessage = 'No internet connection. Please check your network and try again.';
     }
-    
+
     throw new Error(errorMessage);
   }
 };
@@ -101,23 +100,17 @@ export const uploadVideo = async (
  * @returns Array of user videos
  */
 export const getUserVideos = async (): Promise<Video[]> => {
-  const token = getToken();
-  
-  if (!token) {
-    console.error('No authentication token found');
-    // Clear any invalid token and redirect to login
-    localStorage.removeItem('vimo_auth_token');
+  if (!isAuthenticated()) {
+    console.error('User not authenticated');
+    // Redirect to login if not authenticated
     window.location.href = '/login';
-    throw new Error('Authentication required. Please log in again.');
+    throw new Error('Authentication required. Please log in.');
   }
-  
+
   try {
     console.log('Fetching user videos...');
-    const response = await axios.get(`${API_URL}/videos/user`, {
-      headers: { 
-        'x-auth-token': token,
-        'Content-Type': 'application/json'
-      },
+    const response = await axios.get(`${API_URL}/videos/me`, {
+      withCredentials: true,
       validateStatus: (status) => status < 500 // Don't throw for 401/403
     });
 
@@ -128,22 +121,22 @@ export const getUserVideos = async (): Promise<Video[]> => {
       window.location.href = '/login';
       throw new Error('Your session has expired. Please log in again.');
     }
-    
+
     if (response.status !== 200) {
       throw new Error(response.data?.message || 'Failed to fetch videos');
     }
-    
+
     console.log(`Found ${response.data?.length || 0} user videos`);
     return response.data || [];
   } catch (error: any) {
     const errorMessage = error.response?.data?.message || error.message;
     console.error('Failed to fetch user videos:', errorMessage);
-    
+
     if (error.response?.status === 401 || error.response?.status === 403) {
       localStorage.removeItem('vimo_auth_token');
       window.location.href = '/login';
     }
-    
+
     throw new Error(errorMessage || 'Failed to fetch videos. Please try again.');
   }
 };
@@ -154,16 +147,15 @@ export const getUserVideos = async (): Promise<Video[]> => {
  * @returns Video data
  */
 export const getVideoById = async (videoId: string): Promise<Video> => {
-  const token = getToken();
-  if (!token) {
+  if (!isAuthenticated()) {
     throw new Error('Authentication required');
   }
-  
+
   try {
     const response = await axios.get(`${API_URL}/api/videos/${videoId}`, {
-      headers: { 'x-auth-token': token }
+      withCredentials: true
     });
-    
+
     return response.data;
   } catch (error: any) {
     console.error('Failed to fetch video:', error.response?.data || error.message);
@@ -177,16 +169,15 @@ export const getVideoById = async (videoId: string): Promise<Video> => {
  * @returns Success message
  */
 export const deleteVideo = async (videoId: string): Promise<{ message: string }> => {
-  const token = getToken();
-  if (!token) {
+  if (!isAuthenticated()) {
     throw new Error('Authentication required');
   }
-  
+
   try {
     const response = await axios.delete(`${API_URL}/api/videos/${videoId}`, {
-      headers: { 'x-auth-token': token }
+      withCredentials: true
     });
-    
+
     return response.data;
   } catch (error: any) {
     console.error('Failed to delete video:', error.response?.data || error.message);
@@ -214,11 +205,11 @@ const conversionCache = new Map<string, CacheEntry>();
 export const videoToMovie = (video: Video): Movie => {
   const videoId = video._id;
   const now = Date.now();
-  
+
   // Check if we have a valid cached conversion
   if (conversionCache.has(videoId)) {
     const cacheEntry = conversionCache.get(videoId)!;
-    
+
     // Check if cache entry is still valid
     if (now - cacheEntry.timestamp < CACHE_EXPIRATION_MS) {
       console.log('Using cached movie conversion for:', videoId);
@@ -228,24 +219,24 @@ export const videoToMovie = (video: Video): Movie => {
       conversionCache.delete(videoId);
     }
   }
-  
+
   console.log('Converting video to movie:', JSON.stringify({
     _id: video._id,
     title: video.title,
     videoUrl: video.videoUrl,
     thumbnailUrl: video.thumbnailUrl
   }, null, 2));
-  
+
   // Debug the source URL
   console.log('Video URL:', video.videoUrl);
-  
+
   // Duration is stored as a number in the Movie type
-  
+
   // Ensure we have a valid URL
-  const videoUrl = video.videoUrl && video.videoUrl.trim() !== '' 
-    ? video.videoUrl 
+  const videoUrl = video.videoUrl && video.videoUrl.trim() !== ''
+    ? video.videoUrl
     : null;
-  
+
   if (!videoUrl) {
     console.error('Missing video URL for video:', video._id);
   } else {
@@ -256,11 +247,16 @@ export const videoToMovie = (video: Video): Movie => {
       console.error('Invalid video URL format:', videoUrl);
     }
   }
-  
+
   // Helper function to get a default thumbnail URL
   const getDefaultThumbnail = () => {
     return 'https://via.placeholder.com/320x180?text=No+Thumbnail';
   };
+  
+  // Ensure thumbnail URL uses HTTPS
+  const secureThumbnailUrl = video.thumbnailUrl 
+    ? video.thumbnailUrl.replace('http://', 'https://')
+    : getDefaultThumbnail();
 
   // Create movie object from video
   const movie: Movie = {
@@ -268,12 +264,12 @@ export const videoToMovie = (video: Video): Movie => {
     title: video.title || 'Untitled Video',
     source: video.videoUrl || '',
     videoUrl: video.videoUrl || '',
-    thumbnail: video.thumbnailUrl || getDefaultThumbnail(),
+    thumbnail: secureThumbnailUrl,
     duration: video.duration || 0
   };
-  
+
   console.log('Created movie object:', JSON.stringify(movie, null, 2));
-  
+
   // Cache the result if we have a valid ID
   if (video._id) {
     conversionCache.set(video._id, {
@@ -283,7 +279,7 @@ export const videoToMovie = (video: Video): Movie => {
   } else {
     console.warn('Video missing ID, skipping cache:', video);
   }
-  
+
   return movie;
 };
 
@@ -294,17 +290,17 @@ export const videoToMovie = (video: Video): Movie => {
  * @returns Success message
  */
 export const shareVideoWithRoom = async (videoId: string, roomCode: string): Promise<{ message: string }> => {
-  const token = getToken();
-  if (!token) {
+  if (!isAuthenticated()) {
     throw new Error('Authentication required');
   }
-  
+
   try {
-    const response = await axios.post(`${API_URL}/api/videos/share`, 
+    const response = await axios.post(
+      `${API_URL}/api/videos/share`,
       { videoId, roomCode },
-      { headers: { 'x-auth-token': token } }
+      { withCredentials: true }
     );
-    
+
     return response.data;
   } catch (error: any) {
     console.error('Failed to share video with room:', error.response?.data || error.message);
@@ -318,17 +314,16 @@ export const shareVideoWithRoom = async (videoId: string, roomCode: string): Pro
  * @returns Array of videos shared in the room
  */
 export const getRoomVideos = async (roomCode: string): Promise<Video[]> => {
-  const token = getToken();
-  if (!token) {
+  if (!isAuthenticated()) {
     throw new Error('Authentication required');
   }
-  
+
   try {
     console.log(`Fetching videos for room: ${roomCode}`);
     const response = await axios.get(`${API_URL}/api/rooms/${roomCode}/videos`, {
-      headers: { 'x-auth-token': token }
+      withCredentials: true
     });
-    
+
     console.log(`Found ${response.data.length} videos in room ${roomCode}`);
     return response.data;
   } catch (error: any) {
@@ -342,17 +337,16 @@ export const getRoomVideos = async (roomCode: string): Promise<Video[]> => {
  * @returns Array of public videos
  */
 export const getPublicVideos = async (): Promise<Video[]> => {
-  const token = getToken();
-  if (!token) {
+  if (!isAuthenticated()) {
     throw new Error('Authentication required');
   }
-  
+
   try {
     console.log('Fetching public videos...');
-    const response = await axios.get(`${API_URL}/api/videos/public`, {
-      headers: { 'x-auth-token': token }
+    const response = await axios.get(`${API_URL}/videos/me`, {
+      withCredentials: true
     });
-    
+
     console.log(`Found ${response.data.length} public videos`);
     return response.data;
   } catch (error: any) {
@@ -368,22 +362,24 @@ export const getPublicVideos = async (): Promise<Video[]> => {
  * @returns Updated video data
  */
 export const updateVideo = async (
-  videoId: string, 
+  videoId: string,
   updates: { title?: string; description?: string; isPublic?: boolean }
 ): Promise<Video> => {
-  const token = getToken();
-  if (!token) {
+  if (!isAuthenticated()) {
     throw new Error('Authentication required');
   }
-  
+
   try {
     console.log(`Updating video ${videoId}:`, updates);
     const response = await axios.put(
       `${API_URL}/api/videos/${videoId}`,
       updates,
-      { headers: { 'x-auth-token': token } }
+      {
+        withCredentials: true,
+        headers: { 'Content-Type': 'application/json' }
+      }
     );
-    
+
     console.log('Video updated successfully:', response.data);
     return response.data;
   } catch (error: any) {

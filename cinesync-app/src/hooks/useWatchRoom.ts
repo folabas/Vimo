@@ -21,6 +21,26 @@ export const useWatchRoom = ({ roomCode }: UseWatchRoomProps) => {
   const lastSeekRef = useRef<number | null>(null);
   const localVideoSourceRef = useRef('');
 
+  // State for error handling
+  const [error, setError] = useState<{ type: string; message: string } | null>(null);
+
+  // Handle socket errors
+  const handleSocketError = useCallback((error: { type: string; message: string; error?: any }) => {
+    console.error(`[useWatchRoom] ${error.type}:`, error.message, error.error);
+    setError(error);
+    
+    // Handle specific error types
+    if (error.type === 'AUTH_ERROR') {
+      // Redirect to login on auth errors
+      navigate('/login', { 
+        state: { 
+          from: window.location.pathname,
+          error: 'Your session has expired. Please log in again.'
+        } 
+      });
+    }
+  }, [navigate]);
+
   // Initialize the watch room socket with the initial room state
   const {
     roomState,
@@ -51,7 +71,8 @@ export const useWatchRoom = ({ roomCode }: UseWatchRoomProps) => {
       isPlaying: false,
       currentTime: 0,
       subtitlesEnabled: false,
-    }
+    },
+    onError: handleSocketError
   });
 
   // Debug logging for room state and video source

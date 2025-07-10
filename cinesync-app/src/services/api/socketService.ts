@@ -1,6 +1,25 @@
 import { io, Socket } from 'socket.io-client';
-import { getToken } from './authService';
+import { isAuthenticated } from './authService';
 import { Message, Participant, RoomState } from './roomService';
+
+// Define types for socket events
+type EventCallback = (...args: any[]) => void;
+
+interface SocketEventCallbacks {
+  [key: string]: EventCallback[];
+}
+
+interface SocketAuthError {
+  message: string;
+  code?: string;
+  data?: any;
+}
+
+interface SocketError extends Error {
+  message: string;
+  code?: string;
+  data?: any;
+}
 
 // Socket events
 export enum SocketEvents {
@@ -41,10 +60,12 @@ export enum SocketEvents {
 // Socket service singleton
 export class SocketService {
   private socket: Socket | null = null;
-  private listeners: Map<string, Function[]> = new Map();
+  private listeners: SocketEventCallbacks = {};
   private currentRoom: string | null = null;
   private connectionPromise: Promise<void> | null = null;
   private isConnecting = false;
+  private connectResolve: (() => void) | null = null;
+  private connectReject: ((error: Error) => void) | null = null;
   // WebRTC Signaling Methods
   public sendOffer(offer: RTCSessionDescriptionInit, to: string): void {
     this.socket?.emit(SocketEvents.OFFER, { offer, to });
@@ -83,96 +104,216 @@ export class SocketService {
   }
   
   /**
+   * Handle connection errors
+   */
+  private handleConnectionError(error: Error | string): void {
+    const errorMessage = typeof error === 'string' ? error : error.message;
+    const errorCode = (error as any)?.code || 'CONNECTION_ERROR';
+    const isAuthError = errorMessage.toLowerCase().includes('user not found') || 
+                      errorMessage.toLowerCase().includes('auth') ||
+                      errorCode === 'AUTH_ERROR';
+    
+    console.error(`[SocketService] ${isAuthError ? 'Authentication' : 'Connection'} error (${errorCode}):`, errorMessage);
+    
+    // Clean up connection state
+    this.isConnecting = false;
+    this.connectionPromise = null;
+    
+    // Create a proper error object
+    const connectionError = typeof error === 'string' 
+      ? new Error(error) 
+      : error;
+    
+    // Set error code and type
+    if (!(connectionError as any).code) {
+      (connectionError as any).code = errorCode;
+    }
+    
+    // Mark as auth error if needed
+    if (isAuthError) {
+      (connectionError as any).isAuthError = true;
+      // Clear invalid token
+      const { logout } = require('./authService');
+      logout();
+    }
+    
+    // Reject the connection promise if it exists
+    if (this.connectReject) {
+      this.connectReject(connectionError);
+    }
+    
+    // Clean up socket
+    if (this.socket) {
+      this.socket.off('connect_error');
+      this.socket.off('connect_timeout');
+      this.socket.off('error');
+      this.disconnect();
+    }
+  }
+
+  /**
    * Initialize the socket connection
    */
   async initialize(): Promise<void> {
+    console.log('[SocketService] Initializing socket connection...');
+    
     // Return existing connection promise if already connecting
-    if (this.connectionPromise) return this.connectionPromise;
+    if (this.connectionPromise) {
+      console.log('[SocketService] Reusing existing connection promise');
+      return this.connectionPromise;
+    }
     
     // Return resolved promise if already connected
     if (this.socket?.connected) {
+      console.log('[SocketService] Socket already connected');
       return Promise.resolve();
     }
     
-    // Ensure we have a valid token
-    const token = getToken();
-    if (!token) {
-      throw new Error('No authentication token found. Please log in first.');
+    // Check if user is authenticated
+    try {
+      console.log('[SocketService] Checking authentication status...');
+      const authenticated = await isAuthenticated();
+      if (!authenticated) {
+        const error = new Error('User is not authenticated. Please log in first.');
+        error.name = 'AuthError';
+        throw error;
+      }
+      console.log('[SocketService] User is authenticated');
+    } catch (error) {
+      console.error('[SocketService] Authentication check failed:', error);
+      if (error instanceof Error) {
+        error.name = 'AuthError';
+      }
+      throw error;
     }
     
     this.connectionPromise = new Promise((resolve, reject) => {
       this.isConnecting = true;
+      this.connectResolve = resolve;
+      this.connectReject = reject;
       
       // Disconnect existing socket if any
       if (this.socket) {
+        console.log('[SocketService] Disconnecting existing socket');
         this.socket.disconnect();
       }
-      if (!token) {
-        this.isConnecting = false;
-        this.connectionPromise = null;
-        return reject(new Error('Authentication required'));
-      }
+
+      const socketUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+      console.log('[SocketService] Connecting to:', socketUrl);
       
-      const BASE_URL = process.env.REACT_APP_SOCKET_URL || 'http://localhost:5000';
-      
-      // Configure socket options with fallback to polling if WebSocket fails
-      console.log('[SocketService] Connecting to WebSocket with token:', token ? 'token exists' : 'no token');
-      
-      this.socket = io(process.env.REACT_APP_API_URL || 'http://localhost:5000', {
-        auth: { token },
-        transports: ['websocket'],
+      // Create new socket connection with credentials
+      this.socket = io(socketUrl, {
+        withCredentials: true,
+        autoConnect: false,
         reconnection: true,
         reconnectionAttempts: 5,
         reconnectionDelay: 1000,
-        timeout: 10000,
-        query: { token }, // Also include token in query params for compatibility
-        autoConnect: true,
-        forceNew: true
+        reconnectionDelayMax: 5000,
+        timeout: 20000,
+        secure: process.env.NODE_ENV === 'production',
+        // Ensure WebSocket is used as the primary transport
+        transports: ['websocket', 'polling']
       });
       
-      // Debug connection events
-      this.socket.on('connect', () => {
-        console.log('[SocketService] Connected to WebSocket');
-        resolve();
+      // Log connection attempt
+      console.log('[SocketService] Socket connection options:', {
+        url: socketUrl,
+        withCredentials: true,
+        secure: process.env.NODE_ENV === 'production',
+        transports: ['websocket', 'polling']
       });
-      
-      this.socket.on('disconnect', () => {
-        console.log('[SocketService] Disconnected from server');
-      });
-      
-      this.socket.on('connect_error', (error) => {
-        console.error('[SocketService] Connection error:', error);
-        this.isConnecting = false;
-        this.connectionPromise = null;
-        reject(error);
-      });
-      
-      // Add timeout to prevent hanging indefinitely
-      setTimeout(() => {
+
+      // Add connection timeout
+      const connectTimeout = setTimeout(() => {
         if (this.isConnecting) {
-          console.error('[SocketService] Connection timeout after 10 seconds');
-          this.isConnecting = false;
-          this.connectionPromise = null;
-          reject(new Error('Connection timeout'));
+          console.error('[SocketService] Connection timeout');
+          this.handleConnectionError(new Error('Connection timeout. Please check your network and try again.'));
         }
       }, 10000);
+      
+      // Socket event handlers
+      this.socket.on('connect', () => {
+        clearTimeout(connectTimeout);
+        console.log('[SocketService] Connected successfully');
+        this.isConnecting = false;
+        if (this.connectResolve) {
+          this.connectResolve();
+        }
+      });
+      
+      this.socket.on('disconnect', (reason: string) => {
+        console.log('[SocketService] Disconnected:', reason);
+        if (reason === 'io server disconnect') {
+          // The server has forcefully disconnected the socket
+          console.error('[SocketService] Server disconnected. Please log in again.');
+        }
+        this.isConnecting = false;
+        this.connectionPromise = null;
+      });
+      
+      this.socket.on('connect_error', (error: Error) => {
+        clearTimeout(connectTimeout);
+        this.handleConnectionError(error);
+      });
+
+      this.socket.on('error', (error: Error) => {
+        console.error('[SocketService] Socket error:', error);
+      });
+
+      // Handle authentication errors
+      this.socket.on('unauthorized', (error: SocketAuthError | string) => {
+        const errorMessage = typeof error === 'string' ? error : error.message;
+        const errorCode = typeof error === 'string' ? 'AUTH_ERROR' : (error.code || 'AUTH_ERROR');
+        
+        console.error(`[SocketService] Authentication error (${errorCode}):`, errorMessage);
+        
+        // Create a proper error object
+        const authError = new Error(`Authentication failed: ${errorMessage}`);
+        (authError as any).code = errorCode;
+        
+        // Clean up and reject
+        this.disconnect();
+        if (this.connectReject) {
+          this.connectReject(authError);
+        }
+        
+        // Clear any stored token as it's invalid
+        const { logout } = require('./authService');
+        logout();
+      });
     });
-    
+
     return this.connectionPromise;
   }
   
   /**
    * Disconnect the socket
    */
+  /**
+   * Disconnect the socket and clean up resources
+   */
   disconnect(): void {
     if (!this.socket) return;
     
+    console.log('[SocketService] Disconnecting socket');
+    
+    // Remove all event listeners
+    this.socket.off();
     this.socket.disconnect();
+    
+    // Clean up references
     this.socket = null;
-    this.listeners.clear();
+    this.listeners = {};
     this.currentRoom = null;
     this.connectionPromise = null;
     this.isConnecting = false;
+    
+    // Clean up connection promise handlers
+    if (this.connectReject) {
+      this.connectReject(new Error('Socket disconnected'));
+    }
+    this.connectResolve = null;
+    this.connectReject = null;
   }
   
   /**
@@ -392,114 +533,63 @@ export class SocketService {
   
   /**
    * Register a socket event listener
+   * @param event - Event name
+   * @param callback - Callback function
    */
-  async on(event: string, callback: Function): Promise<void> {
+  async on(event: string, callback: EventCallback): Promise<void> {
     // Initialize socket if needed
     await this.initialize();
     
     if (!this.socket) {
-      console.error(`[SocketService] Cannot register event '${event}': Socket not initialized`);
       throw new Error('Socket not initialized');
     }
     
-    console.log(`[SocketService] Registering event listener for '${event}'`);
+    // Add to our listeners map
+    if (!this.listeners[event]) {
+      this.listeners[event] = [];
+    }
     
-    // Create a wrapped callback to ensure we can properly remove it later
-    const wrappedCallback = (data: any) => {
-      console.log(`[SocketService] Event '${event}' received with args:`, data);
-      
-      // Special handling for room state updates to ensure valid data
-      if (event === SocketEvents.ROOM_STATE_UPDATE) {
-        // Clone the data to avoid reference issues
-        const stateClone = structuredClone(data);
-        
-        // Ensure we have a valid selectedMovie object with all required fields
-        if (!stateClone.selectedMovie) {
-          console.log('No selectedMovie in room state update, creating empty placeholder');
-          stateClone.selectedMovie = { 
-            id: '', 
-            title: '', 
-            source: '' 
-          };
-        } 
-        // If the server uses 'movie' field instead of 'selectedMovie' (server format)
-        else if (stateClone.movie && !stateClone.selectedMovie.source) {
-          console.log('Found movie object in room state, mapping to selectedMovie', stateClone.movie);
-          stateClone.selectedMovie = {
-            id: stateClone.movie.id || '',
-            title: stateClone.movie.title || '',
-            source: stateClone.movie.source || '',
-            thumbnail: stateClone.movie.thumbnail || '',
-            duration: stateClone.movie.duration || '00:00'
-          };
-        }
-        // If we have a selectedMovie with videoUrl but no source, map it
-        else if (stateClone.selectedMovie.videoUrl && 
-               (!stateClone.selectedMovie.source || stateClone.selectedMovie.source === '')) {
-          console.log('Mapping videoUrl to source:', stateClone.selectedMovie.videoUrl);
-          stateClone.selectedMovie.source = stateClone.selectedMovie.videoUrl;
-        } 
-        // If we have a selectedMovie but no source (and no videoUrl)
-        else if (!stateClone.selectedMovie.source || stateClone.selectedMovie.source === '') {
-          console.warn('Room state update contains selectedMovie with no source:', stateClone.selectedMovie);
-          
-          // Add a flag to indicate the source is invalid, so client can use fallbacks
-          stateClone.selectedMovie._sourceInvalid = true;
-        }
-        
-        // Double check that source is valid after our fixes
-        if (stateClone.selectedMovie && stateClone.selectedMovie.source) {
-          console.log('Final source URL in room state update:', stateClone.selectedMovie.source);
-        } else if (stateClone.selectedMovie) {
-          console.warn('Source is still empty after processing!');
-          // Add a flag to indicate the source is invalid
-          stateClone.selectedMovie._sourceInvalid = true;
-        }
-        
-        // Dispatch to listeners with the processed state
-        callback(stateClone);
-      } else {
-        // For all other events, just pass the data through
-        callback(data);
+    // Create a wrapper function to maintain proper 'this' context
+    const wrappedCallback = (...args: any[]) => {
+      try {
+        callback(...args);
+      } catch (error) {
+        console.error(`[SocketService] Error in '${event}' handler:`, error);
       }
     };
     
-    // Store the wrapped callback so we can remove it later
-    if (!this.listeners.has(event)) {
-      this.listeners.set(event, []);
-    }
+    // Store the original callback reference so we can remove it later
+    (wrappedCallback as any).__originalCallback = callback;
+    this.listeners[event].push(wrappedCallback);
     
-    const listeners = this.listeners.get(event)!;
-    listeners.push(wrappedCallback);
-    
-    // Add the event listener
+    // Add the actual socket listener with the wrapped callback
     this.socket.on(event, wrappedCallback);
   }
   
   /**
    * Remove event listener
    * @param event - Event name
-   * @param callback - Callback function
+   * @param callback - Callback function to remove
    */
-  off(event: string, callback: Function): void {
-    if (!this.socket) return;
+  off(event: string, callback: EventCallback): void {
+    if (!this.socket || !this.listeners[event]) return;
     
-    // Remove from listeners map
-    const callbacks = this.listeners.get(event);
-    if (callbacks) {
-      const index = callbacks.indexOf(callback);
-      if (index !== -1) {
-        callbacks.splice(index, 1);
-        
-        // Get the wrapped callback to properly remove the listener
-        const wrappedCallback = (callback as any).__wrapped;
-        if (wrappedCallback) {
-          this.socket.off(event, wrappedCallback);
-        } else {
-          // Fallback to removing with the original callback
-          this.socket.off(event, callback as any);
-        }
-      }
+    // Find the wrapped callback in our listeners
+    const wrappedCallback = this.listeners[event].find(
+      (cb) => (cb as any).__originalCallback === callback
+    );
+    
+    // Remove from our listeners map
+    this.listeners[event] = this.listeners[event].filter(
+      (cb) => (cb as any).__originalCallback !== callback
+    );
+    
+    // Remove the actual socket listener using the wrapped callback if found
+    if (wrappedCallback) {
+      this.socket.off(event, wrappedCallback);
+    } else {
+      // Fallback to removing with the original callback
+      this.socket.off(event, callback);
     }
   }
 

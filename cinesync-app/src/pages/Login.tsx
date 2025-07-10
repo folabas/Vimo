@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FiEye, FiEyeOff } from 'react-icons/fi';
+// Using text toggle instead of icons for better compatibility
 import { useLogin } from '../hooks/useLogin';
 import MovieBackground from '../components/MovieBackground';
 import {
@@ -65,7 +65,7 @@ const Login: React.FC = () => {
                 onClick={() => setShowPassword(!showPassword)}
                 aria-label={showPassword ? 'Hide password' : 'Show password'}
               >
-                {showPassword ? <FiEyeOff size={18} /> : <FiEye size={18} />}
+                {showPassword ? 'Hide' : 'Show'}
               </PasswordToggle>
             </PasswordInputWrapper>
           </FormGroup>

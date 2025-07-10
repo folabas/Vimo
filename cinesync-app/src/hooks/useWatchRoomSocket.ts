@@ -1,7 +1,44 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+
+/**
+ * Normalizes a movie object to ensure it has all required fields and HTTPS URLs
+ */
+const normalizeMovie = (movie?: Movie | null): Movie | null => {
+  if (!movie) return null;
+  
+  // Ensure source is always set and uses HTTPS
+  let source = movie.source || movie.videoUrl || '';
+  if (source.startsWith('http://')) {
+    source = source.replace('http://', 'https://');
+  } else if (!source.startsWith('https://') && source.startsWith('//')) {
+    source = 'https:' + source;
+  }
+
+  // Ensure thumbnail is always set and uses HTTPS
+  // Use type assertion to access thumbnailUrl if it exists
+  const movieWithThumbnail = movie as Movie & { thumbnailUrl?: string };
+  let thumbnail = movie.thumbnail || movieWithThumbnail.thumbnailUrl || '';
+  
+  if (thumbnail.startsWith('http://')) {
+    thumbnail = thumbnail.replace('http://', 'https://');
+  } else if (!thumbnail.startsWith('https://') && thumbnail.startsWith('//')) {
+    thumbnail = 'https:' + thumbnail;
+  }
+
+  return {
+    ...movie,
+    id: movie.id || `temp-${Date.now()}`,
+    title: movie.title || 'Untitled Video',
+    source,
+    videoUrl: source, // Keep in sync with source
+    thumbnail,
+    duration: movie.duration || '00:00',
+  };
+};
+import { Socket } from 'socket.io-client';
+import { isAuthenticated } from '../services/api/authService';
 import { socketService, SocketEvents } from '../services/api/socketService';
 import { RoomState, Message, Participant, Movie } from '../types/room';
-import { getToken } from '../services/api/authService';
 
 // Type for playback control events
 interface PlaybackEvent {
@@ -18,8 +55,17 @@ const connectionTracker = {
   hasJoined: false
 };
 
+interface ErrorHandler {
+  type: 'AUTH_ERROR' | 'CONNECTION_ERROR' | 'ROOM_ERROR';
+  message: string;
+  error?: any;
+}
+
 interface UseWatchRoomSocketProps {
   roomCode: string;
+  onStateUpdate?: (state: RoomState) => void;
+  onParticipantJoined?: (participant: Participant) => void;
+  onError?: (error: ErrorHandler) => void;
   initialRoomState: RoomState;
 }
 
@@ -49,15 +95,43 @@ interface UseWatchRoomSocketResult {
 export const useWatchRoomSocket = ({
   roomCode,
   initialRoomState,
+  onError = () => {},
+  onStateUpdate,
+  onParticipantJoined
 }: UseWatchRoomSocketProps): UseWatchRoomSocketResult => {
   
-  // Initialize with a safe default for selectedMovie to prevent null references
+  // Initialize with default values for the result
+  const defaultResult: UseWatchRoomSocketResult = {
+    roomState: initialRoomState,
+    setRoomState: () => {},
+    messages: [],
+    isWaitingForParticipants: false,
+    showWaitingOverlay: true,
+    isHost: false,
+    isPlaying: false,
+    currentTime: 0,
+    emitPlay: () => {},
+    emitPause: () => {},
+    emitTimeUpdate: () => {},
+    emitSeek: () => {},
+    emitSelectVideo: () => {},
+    emitToggleSubtitles: () => {},
+    emitChatMessage: () => {},
+    leaveRoom: () => {},
+    setShowWaitingOverlay: () => {},
+    setCurrentTime: () => {},
+    setIsPlaying: () => {},
+    updateMovieState: () => {}
+  };
+
+  // Initialize with normalized selectedMovie
   const safeInitialState = {
     ...initialRoomState,
-    selectedMovie: initialRoomState.selectedMovie || {
-      id: '',
+    selectedMovie: normalizeMovie(initialRoomState.selectedMovie) || {
+      id: `temp-${Date.now()}`,
       title: '',
       source: '',
+      videoUrl: '',
       thumbnail: '',
       duration: '00:00'
     }
@@ -209,160 +283,180 @@ export const useWatchRoomSocket = ({
   // Track connection state
   const [isConnected, setConnected] = useState(false);
   
-  // Setup socket event handlers
-  useEffect(() => {
-    if (!isConnected) return;
-    
-    const handlePlayVideo = (data: PlaybackEvent) => {
-      console.log('[Socket] Received play command, time:', data.currentTime);
-      setIsPlaying(true);
-      setCurrentTime(data.currentTime);
-    };
-    
-    const handlePauseVideo = (data: PlaybackEvent) => {
-      console.log('[Socket] Received pause command, time:', data.currentTime);
-      setIsPlaying(false);
-      setCurrentTime(data.currentTime);
-    };
-    
-    const handleSeekVideo = (data: PlaybackEvent) => {
-      console.log('[Socket] Received seek command, time:', data.currentTime);
-      setCurrentTime(data.currentTime);
-    };
-    
-    // Register event handlers
-    socketService.on(SocketEvents.VIDEO_PLAYED, handlePlayVideo);
-    socketService.on(SocketEvents.VIDEO_PAUSED, handlePauseVideo);
-    socketService.on(SocketEvents.VIDEO_SEEKED, handleSeekVideo);
-    
-    // Cleanup function
-    return () => {
-      socketService.off(SocketEvents.VIDEO_PLAYED, handlePlayVideo);
-      socketService.off(SocketEvents.VIDEO_PAUSED, handlePauseVideo);
-      socketService.off(SocketEvents.VIDEO_SEEKED, handleSeekVideo);
-    };
-  }, [isConnected]);
-  
-  // Initialize socket connection
+  // Setup socket connection and event handlers
   useEffect(() => {
     if (!roomCode) return;
+
+    console.log('[useWatchRoomSocket] Setting up socket connection for room:', roomCode);
     
-    let isMounted = true;
-    console.log('[useWatchRoomSocket] Initializing socket for room:', roomCode);
-    
-    // Check authentication
-    const token = getToken();
-    if (!token) {
-      console.error('[useWatchRoomSocket] No authentication token found');
-      // You might want to redirect to login page here
+    // Track if we're already connecting to avoid duplicate connections
+    if (connectionTracker.isConnecting) {
+      console.log('[useWatchRoomSocket] Already connecting to socket, skipping...');
       return;
     }
-    
-    const initializeSocket = async () => {
+
+    // Track if we've already joined this room to prevent duplicate joins
+    if (connectionTracker.currentRoom === roomCode && connectionTracker.hasJoined) {
+      console.log('[useWatchRoomSocket] Already joined this room, skipping...');
+      return;
+    }
+
+    // Set connecting state
+    connectionTracker.isConnecting = true;
+    connectionTracker.currentRoom = roomCode;
+    connectionTracker.hasJoined = false;
+
+    const connectToRoom = async () => {
       try {
-        console.log('[useWatchRoomSocket] Initializing socket with token');
+        // Check if user is authenticated
+        console.log('[useWatchRoomSocket] Checking authentication status...');
+        const authenticated = await isAuthenticated();
         
+        if (!authenticated) {
+          console.error('[useWatchRoomSocket] User is not authenticated');
+          onError?.({
+            type: 'AUTH_ERROR',
+            message: 'You must be logged in to join a room',
+          });
+          return;
+        }
+
         // Initialize socket connection
+        console.log('[useWatchRoomSocket] Initializing socket connection...');
         await socketService.initialize();
-        
-        if (!isMounted) return;
-        
+
         // Set up event handlers
-        const handleRoomUpdate = (data: RoomState) => {
-          console.log('[useWatchRoomSocket] Room state updated:', data);
-          setRoomState(prev => ({
-            ...prev,
-            ...data,
-            selectedMovie: data.selectedMovie || prev.selectedMovie
-          }));
+        const handlePlayVideo = (data: PlaybackEvent) => {
+          console.log('[Socket] Received play command, time:', data.currentTime);
+          setIsPlaying(true);
+          setCurrentTime(data.currentTime);
         };
         
-        const handleParticipantJoined = (participant: Participant) => {
-          console.log('[useWatchRoomSocket] Participant joined:', participant);
-          setRoomState(prev => ({
-            ...prev,
-            participants: [...prev.participants, participant]
-          }));
+        const handlePauseVideo = (data: PlaybackEvent) => {
+          console.log('[Socket] Received pause command, time:', data.currentTime);
+          setIsPlaying(false);
+          setCurrentTime(data.currentTime);
         };
         
+        const handleSeekVideo = (data: PlaybackEvent) => {
+          console.log('[Socket] Received seek command, time:', data.currentTime);
+          setCurrentTime(data.currentTime);
+        };
+
         // Register event handlers
-        socketService.on(SocketEvents.ROOM_STATE_UPDATE, handleRoomUpdate);
-        socketService.on(SocketEvents.PARTICIPANT_JOINED, handleParticipantJoined);
-        
+        socketService.on(SocketEvents.VIDEO_PLAYED, handlePlayVideo);
+        socketService.on(SocketEvents.VIDEO_PAUSED, handlePauseVideo);
+        socketService.on(SocketEvents.VIDEO_SEEKED, handleSeekVideo);
+
         // Join the room
         console.log('[useWatchRoomSocket] Joining room:', roomCode);
         await socketService.joinRoom(roomCode);
         
-        if (!isMounted) return;
-        
+        // Mark as connected and joined
         setConnected(true);
-        console.log('[useWatchRoomSocket] Successfully joined room:', roomCode);
-        
+        connectionTracker.hasJoined = true;
+        console.log('[useWatchRoomSocket] Successfully joined room');
+
+        // Start the waiting countdown if needed
+        startWaitingCountdown();
+
         // Cleanup function for event handlers
         return () => {
-          socketService.off(SocketEvents.ROOM_STATE_UPDATE, handleRoomUpdate);
-          socketService.off(SocketEvents.PARTICIPANT_JOINED, handleParticipantJoined);
+          console.log('[useWatchRoomSocket] Cleaning up socket event handlers');
+          socketService.off(SocketEvents.VIDEO_PLAYED, handlePlayVideo);
+          socketService.off(SocketEvents.VIDEO_PAUSED, handlePauseVideo);
+          socketService.off(SocketEvents.VIDEO_SEEKED, handleSeekVideo);
         };
+
+      } catch (error) {
+        console.error('[useWatchRoomSocket] Error connecting to room:', error);
         
-      } catch (error: unknown) {
-        console.error('[useWatchRoomSocket] Error initializing socket:', error);
-        if (isMounted) {
-          setConnected(false);
-          // Handle specific authentication errors
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          if (errorMessage.includes('User not found') || errorMessage.includes('authentication')) {
-            console.error('[useWatchRoomSocket] Authentication failed. Please log in again.');
-            // You might want to redirect to login page here
-          } else {
-            console.error('[useWatchRoomSocket] Connection error:', errorMessage);
-          }
+        // Handle authentication errors specifically
+        if (error instanceof Error && error.name === 'AuthError') {
+          onError?.({
+            type: 'AUTH_ERROR',
+            message: 'Authentication failed. Please log in again.',
+            error,
+          });
+        } else {
+          onError?.({
+            type: 'CONNECTION_ERROR',
+            message: 'Failed to connect to the room',
+            error,
+          });
         }
+      } finally {
+        connectionTracker.isConnecting = false;
       }
     };
-    
-    initializeSocket();
-    
-    // Cleanup function
+
+    const cleanup = connectToRoom();
+
+    // Cleanup function for the effect
     return () => {
-      isMounted = false;
       console.log('[useWatchRoomSocket] Cleaning up socket connection');
       
-      try {
-        // Leave the room if connected
-        if (socketService.isConnected()) {
-          try {
-            socketService.leaveRoom(roomCode);
-          } catch (error) {
-            console.error('[useWatchRoomSocket] Error leaving room during cleanup:', error);
-          }
-        }
-      } catch (error) {
-        console.error('[useWatchRoomSocket] Error during cleanup:', error);
+      // Clear any pending timeouts/intervals
+      if (countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current);
+        countdownIntervalRef.current = null;
       }
+      
+      // Only disconnect if we're not just reconnecting to a different room
+      if (connectionTracker.currentRoom === roomCode) {
+        connectionTracker.currentRoom = null;
+        connectionTracker.hasJoined = false;
+        
+        if (isConnected) {
+          console.log('[useWatchRoomSocket] Leaving room and disconnecting');
+          socketService.leaveRoom(roomCode);
+          setConnected(false);
+        }
+      }
+      
+      // Clean up event handlers
+      cleanup?.then(cleanupFn => cleanupFn?.());
     };
-  }, [roomCode]);
+  }, [roomCode, onError, isConnected, startWaitingCountdown]);
 
   // Handle room joined event
   useEffect(() => {
-    if (!isConnected) return;
-    
+    if (!roomCode) return;
+
     const handleRoomJoined = (data: RoomState) => {
-      console.log('[useWatchRoomSocket] Room joined:', data);
+      console.log('[useWatchRoomSocket] Room joined data:', data);
+      
+      // Create a deep copy of the room state and normalize the movie
+      const updatedRoomState = {
+        ...data,
+        selectedMovie: normalizeMovie(data.selectedMovie)
+      };
+      
+      console.log('[useWatchRoomSocket] Updated room state with normalized movie:', {
+        hasMovie: !!updatedRoomState.selectedMovie,
+        source: updatedRoomState.selectedMovie?.source,
+        sourceValid: !!updatedRoomState.selectedMovie?.source,
+        title: updatedRoomState.selectedMovie?.title
+      });
       
       // Update room state with response data
-      setRoomState(prev => ({
-        ...prev,
-        ...data,
-        selectedMovie: data.selectedMovie || prev.selectedMovie,
-      }));
-      
-      // Start the waiting countdown if needed
-      if (data.isWaiting) {
-        setIsWaitingForParticipants(true);
-        startWaitingCountdown();
-      } else {
-        setShowWaitingOverlay(false);
-      }
+      setRoomState(prev => {
+        const newState = {
+          ...prev,
+          ...updatedRoomState,
+          selectedMovie: updatedRoomState.selectedMovie || prev.selectedMovie,
+        };
+        
+        // Log the final state for debugging
+        console.log('Updated room state:', {
+          hasMovie: !!newState.selectedMovie,
+          source: newState.selectedMovie?.source,
+          sourceValid: !!newState.selectedMovie?.source,
+          title: newState.selectedMovie?.title
+        });
+        
+        return newState;
+      });
       
       // Set initial playback state
       setIsPlaying(data.isPlaying || false);
@@ -376,11 +470,11 @@ export const useWatchRoomSocket = ({
     return () => {
       socketService.off(SocketEvents.ROOM_JOINED, handleRoomJoined);
     };
-  }, [isConnected, startWaitingCountdown]);
-  
+  }, [roomCode, setRoomState, setIsPlaying, setCurrentTime]);
+
   // Handle participant left event
   useEffect(() => {
-    if (!isConnected) return;
+    if (!roomCode) return;
     
     const handleParticipantLeft = (data: { userId: string, username: string }) => {
       console.log('[useWatchRoomSocket] Participant left:', data);
@@ -407,8 +501,8 @@ export const useWatchRoomSocket = ({
     return () => {
       socketService.off(SocketEvents.PARTICIPANT_LEFT, handleParticipantLeft);
     };
-  }, [isConnected]);
-  
+  }, [roomState.roomCode]);
+
   // Handle leaving the room
   const leaveRoom = useCallback(() => {
     if (!roomCode) return;
@@ -420,7 +514,7 @@ export const useWatchRoomSocket = ({
       console.error('[useWatchRoomSocket] Error leaving room:', error);
     }
   }, [roomCode]);
-  
+
   // Debug effect to log state changes
   useEffect(() => {
     if (process.env.NODE_ENV === 'development') {
@@ -429,9 +523,11 @@ export const useWatchRoomSocket = ({
         isPlaying
       });
     }
-  }, [roomState, isPlaying]); // Added isPlaying to dependencies
+  }, [roomState, isPlaying]);
 
-  return {
+  // Return the result object with all required properties
+  const result: UseWatchRoomSocketResult = {
+    ...defaultResult, // Use defaults as fallback
     roomState,
     setRoomState,
     messages,
@@ -453,4 +549,6 @@ export const useWatchRoomSocket = ({
     setIsPlaying,
     updateMovieState,
   };
+
+  return result;
 };

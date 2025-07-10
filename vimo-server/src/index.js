@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
 const http = require('http');
+const cookieParser = require('cookie-parser');
 const authRoutes = require('./routes/auth.routes');
 const roomRoutes = require('./routes/room.routes');
 const videoRoutes = require('./routes/video.routes');
@@ -19,9 +20,22 @@ const server = http.createServer(app);
 // Initialize Socket.IO
 const io = initializeSocket(server);
 
+// CORS configuration
+const corsOptions = {
+  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  exposedHeaders: ['set-cookie']
+};
+
 // Middleware
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(express.json());
+app.use(cookieParser());
+
+// Trust first proxy (needed for secure cookies in production)
+app.set('trust proxy', 1);
 
 // Routes
 app.use('/api/auth', authRoutes);
