@@ -430,28 +430,42 @@ export const useWatchRoomSocket = ({
           id: data.selectedMovie.id,
           title: data.selectedMovie.title,
           source: data.selectedMovie.source ? 'source-exists' : 'no-source',
-          thumbnail: data.selectedMovie.thumbnail ? 'thumbnail-exists' : 'no-thumbnail'
+          thumbnail: data.selectedMovie.thumbnail ? 'thumbnail-exists' : 'no-thumbnail',
+          videoUrl: (data.selectedMovie as any).videoUrl ? 'videoUrl-exists' : 'no-videoUrl'
         } : 'no-movie'
       });
       
-      // Ensure we have a valid movie object before proceeding
+      // If no movie in the data, keep the current state but update other room properties
       if (!data.selectedMovie) {
         console.error('[useWatchRoomSocket] No selected movie in room join data');
+        setRoomState(prev => ({
+          ...prev,
+          ...data,
+          // Keep the existing selectedMovie if available
+          selectedMovie: prev.selectedMovie
+        }));
         return;
       }
       
       // Create a deep copy of the movie to avoid mutation
-      const movieCopy = { ...data.selectedMovie };
+      const movieCopy = { 
+        ...data.selectedMovie,
+        // Ensure we have all required properties with fallbacks
+        id: data.selectedMovie.id || `temp-${Date.now()}`,
+        title: data.selectedMovie.title || 'Untitled Video',
+        source: data.selectedMovie.source || (data.selectedMovie as any).videoUrl || '',
+        thumbnail: data.selectedMovie.thumbnail || (data.selectedMovie as any).thumbnailUrl || ''
+      };
       
       // Normalize the movie object
       const normalizedMovie = normalizeMovie(movieCopy);
       
       if (!normalizedMovie?.source) {
         console.error('[useWatchRoomSocket] Could not determine video source for movie:', {
-          id: data.selectedMovie.id,
-          title: data.selectedMovie.title,
-          source: data.selectedMovie.source,
-          videoUrl: (data.selectedMovie as any).videoUrl,
+          id: movieCopy.id,
+          title: movieCopy.title,
+          source: movieCopy.source,
+          videoUrl: (movieCopy as any).videoUrl,
           rawMovie: data.selectedMovie
         });
         return;
@@ -461,7 +475,8 @@ export const useWatchRoomSocket = ({
         id: normalizedMovie.id,
         title: normalizedMovie.title,
         source: normalizedMovie.source ? 'source-valid' : 'source-missing',
-        thumbnail: normalizedMovie.thumbnail ? 'thumbnail-valid' : 'thumbnail-missing'
+        thumbnail: normalizedMovie.thumbnail ? 'thumbnail-valid' : 'thumbnail-missing',
+        videoUrl: (normalizedMovie as any).videoUrl ? 'videoUrl-valid' : 'videoUrl-missing'
       });
       
       // Create updated room state with normalized movie
@@ -472,13 +487,13 @@ export const useWatchRoomSocket = ({
         currentTime: data.currentTime || 0
       };
       
-      // Safe logging with null checks
       console.log('[useWatchRoomSocket] Updated room state with normalized movie:', {
         hasMovie: !!updatedRoomState.selectedMovie,
         source: updatedRoomState.selectedMovie?.source || 'no-source',
         sourceValid: !!updatedRoomState.selectedMovie?.source,
         title: updatedRoomState.selectedMovie?.title || 'no-title',
-        id: updatedRoomState.selectedMovie?.id || 'no-id'
+        id: updatedRoomState.selectedMovie?.id || 'no-id',
+        videoUrl: (updatedRoomState.selectedMovie as any)?.videoUrl ? 'has-videoUrl' : 'no-videoUrl'
       });
       
       // Update room state with response data
@@ -486,20 +501,20 @@ export const useWatchRoomSocket = ({
         const newState = {
           ...prev,
           ...updatedRoomState,
+          // Ensure we never lose the selectedMovie
           selectedMovie: updatedRoomState.selectedMovie || prev.selectedMovie,
         };
         
-        // Log the final state for debugging
-        console.log('Updated room state:', {
-          hasMovie: !!newState.selectedMovie,
-          source: newState.selectedMovie?.source,
-          sourceValid: !!newState.selectedMovie?.source,
-          title: newState.selectedMovie?.title
+        console.log('[useWatchRoomSocket] Setting new room state:', {
+          hasSelectedMovie: !!newState.selectedMovie,
+          source: newState.selectedMovie?.source || 'no-source',
+          title: newState.selectedMovie?.title || 'no-title'
         });
         
         return newState;
       });
       
+      // Update playback state
       // Set initial playback state
       setIsPlaying(data.isPlaying || false);
       if (typeof data.currentTime === 'number') {
