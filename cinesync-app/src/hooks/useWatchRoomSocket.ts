@@ -424,19 +424,61 @@ export const useWatchRoomSocket = ({
     if (!roomCode) return;
 
     const handleRoomJoined = (data: RoomState) => {
-      console.log('[useWatchRoomSocket] Room joined data:', data);
-      
-      // Create a deep copy of the room state and normalize the movie
-      const updatedRoomState = {
+      console.log('[useWatchRoomSocket] Room joined data:', {
         ...data,
-        selectedMovie: normalizeMovie(data.selectedMovie)
+        selectedMovie: data.selectedMovie ? {
+          id: data.selectedMovie.id,
+          title: data.selectedMovie.title,
+          source: data.selectedMovie.source ? 'source-exists' : 'no-source',
+          thumbnail: data.selectedMovie.thumbnail ? 'thumbnail-exists' : 'no-thumbnail'
+        } : 'no-movie'
+      });
+      
+      // Ensure we have a valid movie object before proceeding
+      if (!data.selectedMovie) {
+        console.error('[useWatchRoomSocket] No selected movie in room join data');
+        return;
+      }
+      
+      // Create a deep copy of the movie to avoid mutation
+      const movieCopy = { ...data.selectedMovie };
+      
+      // Normalize the movie object
+      const normalizedMovie = normalizeMovie(movieCopy);
+      
+      if (!normalizedMovie?.source) {
+        console.error('[useWatchRoomSocket] Could not determine video source for movie:', {
+          id: data.selectedMovie.id,
+          title: data.selectedMovie.title,
+          source: data.selectedMovie.source,
+          videoUrl: (data.selectedMovie as any).videoUrl,
+          rawMovie: data.selectedMovie
+        });
+        return;
+      }
+      
+      console.log('[useWatchRoomSocket] Normalized movie:', {
+        id: normalizedMovie.id,
+        title: normalizedMovie.title,
+        source: normalizedMovie.source ? 'source-valid' : 'source-missing',
+        thumbnail: normalizedMovie.thumbnail ? 'thumbnail-valid' : 'thumbnail-missing'
+      });
+      
+      // Create updated room state with normalized movie
+      const updatedRoomState: RoomState = {
+        ...data,
+        selectedMovie: normalizedMovie,
+        isPlaying: data.isPlaying || false,
+        currentTime: data.currentTime || 0
       };
       
+      // Safe logging with null checks
       console.log('[useWatchRoomSocket] Updated room state with normalized movie:', {
         hasMovie: !!updatedRoomState.selectedMovie,
-        source: updatedRoomState.selectedMovie?.source,
+        source: updatedRoomState.selectedMovie?.source || 'no-source',
         sourceValid: !!updatedRoomState.selectedMovie?.source,
-        title: updatedRoomState.selectedMovie?.title
+        title: updatedRoomState.selectedMovie?.title || 'no-title',
+        id: updatedRoomState.selectedMovie?.id || 'no-id'
       });
       
       // Update room state with response data
@@ -503,17 +545,42 @@ export const useWatchRoomSocket = ({
     };
   }, [roomState.roomCode]);
 
-  // Handle leaving the room
+  // Handle cleanup when leaving room
   const leaveRoom = useCallback(() => {
-    if (!roomCode) return;
-    
-    try {
+    if (roomCode) {
+      console.log('[useWatchRoomSocket] Leaving room:', roomCode, {
+        hasSelectedMovie: !!roomState.selectedMovie,
+        movieSource: roomState.selectedMovie?.source ? 'has-source' : 'no-source'
+      });
+      
+      // Get current movie before resetting state
+      const currentMovie = roomState.selectedMovie;
+      
+      // Reset connection first
       socketService.leaveRoom(roomCode);
       setConnected(false);
-    } catch (error) {
-      console.error('[useWatchRoomSocket] Error leaving room:', error);
+      
+      // Reset connection tracker
+      connectionTracker.currentRoom = null;
+      connectionTracker.hasJoined = false;
+      connectionTracker.isConnecting = false;
+      
+      // Only keep the movie if it has a valid source
+      const movieToKeep = currentMovie?.source ? currentMovie : null;
+      
+      console.log('[useWatchRoomSocket] Resetting room state, keeping movie:', {
+        id: movieToKeep?.id,
+        hasSource: !!movieToKeep?.source,
+        source: movieToKeep?.source ? 'source-valid' : 'no-valid-source'
+      });
+      
+      // Reset room state, conditionally keeping the selected movie
+      setRoomState({
+        ...initialRoomState,
+        selectedMovie: movieToKeep
+      });
     }
-  }, [roomCode]);
+  }, [roomCode, initialRoomState, roomState.selectedMovie]);
 
   // Debug effect to log state changes
   useEffect(() => {
