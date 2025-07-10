@@ -239,13 +239,7 @@ export const videoToMovie = (video: Video): Movie => {
   // Debug the source URL
   console.log('Video URL:', video.videoUrl);
   
-  // Format duration as MM:SS if available
-  let formattedDuration = '00:00';
-  if (video.duration) {
-    const minutes = Math.floor(video.duration / 60);
-    const seconds = Math.floor(video.duration % 60);
-    formattedDuration = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-  }
+  // Duration is stored as a number in the Movie type
   
   // Ensure we have a valid URL
   const videoUrl = video.videoUrl && video.videoUrl.trim() !== '' 
