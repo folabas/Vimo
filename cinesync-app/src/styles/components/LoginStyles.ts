@@ -69,6 +69,7 @@ export const Input = styled.input`
   font-size: 1rem;
   padding: 12px 16px;
   transition: border-color 0.2s, box-shadow 0.2s;
+  width: 100%;
   
   &:focus {
     border-color: ${colors.primary};
@@ -78,6 +79,40 @@ export const Input = styled.input`
   
   &::placeholder {
     color: ${colors.textMuted};
+  }
+`;
+
+export const PasswordInputWrapper = styled.div`
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+`;
+
+export const PasswordToggle = styled.button`
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: ${colors.textSecondary};
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s;
+  border-radius: 4px;
+  
+  &:hover {
+    color: ${colors.primary};
+    background-color: ${colors.inputBackground};
+  }
+  
+  &:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.2);
   }
 `;
 

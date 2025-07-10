@@ -1,6 +1,14 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { socketService, SocketEvents } from '../services/api/socketService';
 import { RoomState, Message, Participant, Movie } from '../types/room';
+import { getToken } from '../services/api/authService';
+
+// Type for playback control events
+interface PlaybackEvent {
+  currentTime: number;
+  roomCode?: string;
+  isHost?: boolean;
+}
 
 // Static connection tracker to persist across component remounts
 // This helps prevent the double-join issue in React's strict mode development
@@ -75,11 +83,26 @@ export const useWatchRoomSocket = ({
 
   const handleRoomStateUpdate = useCallback((newState: RoomState) => {
     if (newState.selectedMovie) {
-      if (!newState.selectedMovie.source && newState.selectedMovie.videoUrl) {
-        newState.selectedMovie.source = newState.selectedMovie.videoUrl;
-      }
-      if (!newState.selectedMovie.source) {
+      // Ensure we have a valid source URL, falling back to videoUrl if needed
+      const source = newState.selectedMovie.source || newState.selectedMovie.videoUrl || '';
+      
+      // Update both source and videoUrl to ensure consistency
+      newState.selectedMovie = {
+        ...newState.selectedMovie,
+        source: source,
+        videoUrl: source,
+      };
+      
+      // Log a warning if we still don't have a valid source
+      if (!source) {
         console.warn('Selected movie has no valid source:', newState.selectedMovie);
+      } else {
+        console.log('Updated selected movie with source:', {
+          id: newState.selectedMovie.id,
+          title: newState.selectedMovie.title,
+          source: source,
+          hasSource: !!source
+        });
       }
     }
 
@@ -154,11 +177,6 @@ export const useWatchRoomSocket = ({
   const emitChatMessage = useCallback((message: string) => {
     socketService.emitChatMessage({ content: message });
   }, []);
-  const leaveRoom = useCallback(() => {
-    if (roomCode) {
-      socketService.leaveRoom(roomCode);
-    }
-  }, [roomCode]);
 
   /**
    * Update the movie state directly (for immediate UI feedback)
@@ -188,144 +206,222 @@ export const useWatchRoomSocket = ({
     }, 1000);
   }, []);
 
-  // Setup room function
-  const setupRoom = useCallback(() => {
-    console.log(`[useWatchRoomSocket] Setting up room ${roomCode}, socket connected:`, socketService.isConnected());
+  // Track connection state
+  const [isConnected, setConnected] = useState(false);
+  
+  // Setup socket event handlers
+  useEffect(() => {
+    if (!isConnected) return;
+    
+    const handlePlayVideo = (data: PlaybackEvent) => {
+      console.log('[Socket] Received play command, time:', data.currentTime);
+      setIsPlaying(true);
+      setCurrentTime(data.currentTime);
+    };
+    
+    const handlePauseVideo = (data: PlaybackEvent) => {
+      console.log('[Socket] Received pause command, time:', data.currentTime);
+      setIsPlaying(false);
+      setCurrentTime(data.currentTime);
+    };
+    
+    const handleSeekVideo = (data: PlaybackEvent) => {
+      console.log('[Socket] Received seek command, time:', data.currentTime);
+      setCurrentTime(data.currentTime);
+    };
     
     // Register event handlers
-    socketService.on(SocketEvents.ROOM_STATE_UPDATE, handleRoomStateUpdate);
-    socketService.on(SocketEvents.ROOM_JOINED, handleRoomJoined);
+    socketService.on(SocketEvents.VIDEO_PLAYED, handlePlayVideo);
+    socketService.on(SocketEvents.VIDEO_PAUSED, handlePauseVideo);
+    socketService.on(SocketEvents.VIDEO_SEEKED, handleSeekVideo);
     
-    // Join the room
-    socketService.joinRoom(roomCode).then((response: any) => {
-      console.log(`[useWatchRoomSocket] Successfully joined room ${roomCode}:`, response);
+    // Cleanup function
+    return () => {
+      socketService.off(SocketEvents.VIDEO_PLAYED, handlePlayVideo);
+      socketService.off(SocketEvents.VIDEO_PAUSED, handlePauseVideo);
+      socketService.off(SocketEvents.VIDEO_SEEKED, handleSeekVideo);
+    };
+  }, [isConnected]);
+  
+  // Initialize socket connection
+  useEffect(() => {
+    if (!roomCode) return;
+    
+    let isMounted = true;
+    console.log('[useWatchRoomSocket] Initializing socket for room:', roomCode);
+    
+    // Check authentication
+    const token = getToken();
+    if (!token) {
+      console.error('[useWatchRoomSocket] No authentication token found');
+      // You might want to redirect to login page here
+      return;
+    }
+    
+    const initializeSocket = async () => {
+      try {
+        console.log('[useWatchRoomSocket] Initializing socket with token');
+        
+        // Initialize socket connection
+        await socketService.initialize();
+        
+        if (!isMounted) return;
+        
+        // Set up event handlers
+        const handleRoomUpdate = (data: RoomState) => {
+          console.log('[useWatchRoomSocket] Room state updated:', data);
+          setRoomState(prev => ({
+            ...prev,
+            ...data,
+            selectedMovie: data.selectedMovie || prev.selectedMovie
+          }));
+        };
+        
+        const handleParticipantJoined = (participant: Participant) => {
+          console.log('[useWatchRoomSocket] Participant joined:', participant);
+          setRoomState(prev => ({
+            ...prev,
+            participants: [...prev.participants, participant]
+          }));
+        };
+        
+        // Register event handlers
+        socketService.on(SocketEvents.ROOM_STATE_UPDATE, handleRoomUpdate);
+        socketService.on(SocketEvents.PARTICIPANT_JOINED, handleParticipantJoined);
+        
+        // Join the room
+        console.log('[useWatchRoomSocket] Joining room:', roomCode);
+        await socketService.joinRoom(roomCode);
+        
+        if (!isMounted) return;
+        
+        setConnected(true);
+        console.log('[useWatchRoomSocket] Successfully joined room:', roomCode);
+        
+        // Cleanup function for event handlers
+        return () => {
+          socketService.off(SocketEvents.ROOM_STATE_UPDATE, handleRoomUpdate);
+          socketService.off(SocketEvents.PARTICIPANT_JOINED, handleParticipantJoined);
+        };
+        
+      } catch (error: unknown) {
+        console.error('[useWatchRoomSocket] Error initializing socket:', error);
+        if (isMounted) {
+          setConnected(false);
+          // Handle specific authentication errors
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          if (errorMessage.includes('User not found') || errorMessage.includes('authentication')) {
+            console.error('[useWatchRoomSocket] Authentication failed. Please log in again.');
+            // You might want to redirect to login page here
+          } else {
+            console.error('[useWatchRoomSocket] Connection error:', errorMessage);
+          }
+        }
+      }
+    };
+    
+    initializeSocket();
+    
+    // Cleanup function
+    return () => {
+      isMounted = false;
+      console.log('[useWatchRoomSocket] Cleaning up socket connection');
+      
+      try {
+        // Leave the room if connected
+        if (socketService.isConnected()) {
+          try {
+            socketService.leaveRoom(roomCode);
+          } catch (error) {
+            console.error('[useWatchRoomSocket] Error leaving room during cleanup:', error);
+          }
+        }
+      } catch (error) {
+        console.error('[useWatchRoomSocket] Error during cleanup:', error);
+      }
+    };
+  }, [roomCode]);
+
+  // Handle room joined event
+  useEffect(() => {
+    if (!isConnected) return;
+    
+    const handleRoomJoined = (data: RoomState) => {
+      console.log('[useWatchRoomSocket] Room joined:', data);
       
       // Update room state with response data
-      if (response) {
-        setRoomState((prev) => ({
-          ...prev,
-          ...response,
-          selectedMovie: (response && response.selectedMovie) || prev.selectedMovie,
-        }));
-        
-        // Start the waiting countdown if needed
-        if (response.isWaiting) {
-          setIsWaitingForParticipants(true);
-          startWaitingCountdown();
-        } else {
-          setShowWaitingOverlay(false);
-        }
-        
-        // Set initial playback state
-        setIsPlaying(response.isPlaying || false);
-        if (typeof response.currentTime === 'number') {
-          setCurrentTime(response.currentTime);
-        }
+      setRoomState(prev => ({
+        ...prev,
+        ...data,
+        selectedMovie: data.selectedMovie || prev.selectedMovie,
+      }));
+      
+      // Start the waiting countdown if needed
+      if (data.isWaiting) {
+        setIsWaitingForParticipants(true);
+        startWaitingCountdown();
+      } else {
+        setShowWaitingOverlay(false);
       }
-    }).catch((error) => {
-      console.error(`[useWatchRoomSocket] Error joining room ${roomCode}:`, error);
-    });
-  }, [roomCode, handleRoomStateUpdate, handleRoomJoined, startWaitingCountdown]);
-
-  // Setup socket connection and event listeners
-  useEffect(() => {
-    console.log(`[useWatchRoomSocket] useEffect for socket setup, roomCode: ${roomCode}`);
-    
-    // Check if already connected to this room
-    if (connectionTracker.currentRoom === roomCode && connectionTracker.hasJoined) {
-      console.log(`[useWatchRoomSocket] Already connected to room ${roomCode}`);
-      return;
-    }
-    
-    // Prevent double connections in React strict mode
-    if (connectionTracker.isConnecting) {
-      console.log(`[useWatchRoomSocket] Connection already in progress`);
-      return;
-    }
-    
-    connectionTracker.isConnecting = true;
-    connectionTracker.currentRoom = roomCode;
-    
-    // Initialize socket connection
-    socketService.initialize().then(() => {
-      console.log(`[useWatchRoomSocket] Socket initialized, setting up room ${roomCode}`);
-      connectionTracker.hasJoined = true;
-      setupRoom();
-    }).catch((error) => {
-      console.error(`[useWatchRoomSocket] Socket initialization error:`, error);
-      connectionTracker.isConnecting = false;
-      connectionTracker.currentRoom = null;
-    });
-    
-    // Listen for participant-joined event
-    socketService.onParticipantJoined(handleParticipantJoined);
-    
-    // Listen for participant-left event
-    socketService.onParticipantLeft(handleParticipantLeft);
-
-    // --- Playback synchronization: listen for host events ---
-    const onPlayVideo = ({ currentTime }: { currentTime: number }) => {
-      console.log('[Socket] Received play-video event, setting isPlaying=true, currentTime:', currentTime);
-      setIsPlaying(true);
-      setCurrentTime(currentTime);
-    };
-    const onPauseVideo = ({ currentTime }: { currentTime: number }) => {
-      console.log('[Socket] Received pause-video event, setting isPlaying=false, currentTime:', currentTime);
-      setIsPlaying(false);
-      setCurrentTime(currentTime);
-    };
-    const onSeekVideo = ({ currentTime }: { currentTime: number }) => {
-      console.log('[Socket] Received seek-video event, setting currentTime:', currentTime);
-      setCurrentTime(currentTime);
-    };
-    const onPlaybackSync = ({ currentTime }: { currentTime: number }) => {
-      console.log('[Socket] Received playback-sync event, updating currentTime:', currentTime);
-      // Only update time if we're playing (to avoid overriding paused state)
-      if (isPlaying) {
-        setCurrentTime(currentTime);
+      
+      // Set initial playback state
+      setIsPlaying(data.isPlaying || false);
+      if (typeof data.currentTime === 'number') {
+        setCurrentTime(data.currentTime);
       }
     };
     
-    // Register event handlers with detailed logging
-    console.log('[useWatchRoomSocket] Registering play-video event handler');
-    socketService.on('play-video', onPlayVideo).catch(err => {
-      console.error('[useWatchRoomSocket] Failed to register play-video handler:', err);
-    });
+    socketService.on(SocketEvents.ROOM_JOINED, handleRoomJoined);
     
-    console.log('[useWatchRoomSocket] Registering pause-video event handler');
-    socketService.on('pause-video', onPauseVideo).catch(err => {
-      console.error('[useWatchRoomSocket] Failed to register pause-video handler:', err);
-    });
-    
-    console.log('[useWatchRoomSocket] Registering seek-video event handler');
-    socketService.on('seek-video', onSeekVideo).catch(err => {
-      console.error('[useWatchRoomSocket] Failed to register seek-video handler:', err);
-    });
-    
-    console.log('[useWatchRoomSocket] Registering playback-sync event handler');
-    socketService.on('playback-sync', onPlaybackSync).catch(err => {
-      console.error('[useWatchRoomSocket] Failed to register playback-sync handler:', err);
-    });
-
     return () => {
-      console.log('Cleaning up socket connection');
-      if (connectionTracker.currentRoom === roomCode) {
-        leaveRoom();
-      }
-      connectionTracker.currentRoom = null;
-
-      // Clean up listeners on unmount
-      socketService.off('play-video', onPlayVideo);
-      socketService.off('pause-video', onPauseVideo);
-      socketService.off('seek-video', onSeekVideo);
-      socketService.off('playback-sync', onPlaybackSync);
-      socketService.off(SocketEvents.PARTICIPANT_JOINED, handleParticipantJoined);
+      socketService.off(SocketEvents.ROOM_JOINED, handleRoomJoined);
+    };
+  }, [isConnected, startWaitingCountdown]);
+  
+  // Handle participant left event
+  useEffect(() => {
+    if (!isConnected) return;
+    
+    const handleParticipantLeft = (data: { userId: string, username: string }) => {
+      console.log('[useWatchRoomSocket] Participant left:', data);
+      
+      setRoomState(prev => ({
+        ...prev,
+        participants: prev.participants.filter(p => p.userId !== data.userId),
+      }));
+      
+      // Add system message
+      setMessages(prev => [
+        ...prev,
+        {
+          id: `system-${Date.now()}`,
+          sender: 'System',
+          content: `${data.username} left the room`,
+          timestamp: new Date(),
+        },
+      ]);
+    };
+    
+    socketService.on(SocketEvents.PARTICIPANT_LEFT, handleParticipantLeft);
+    
+    return () => {
       socketService.off(SocketEvents.PARTICIPANT_LEFT, handleParticipantLeft);
     };
-  }, [roomCode, setupRoom, leaveRoom, handleParticipantJoined, handleParticipantLeft]);
-
+  }, [isConnected]);
+  
+  // Handle leaving the room
+  const leaveRoom = useCallback(() => {
+    if (!roomCode) return;
+    
+    try {
+      socketService.leaveRoom(roomCode);
+      setConnected(false);
+    } catch (error) {
+      console.error('[useWatchRoomSocket] Error leaving room:', error);
+    }
+  }, [roomCode]);
+  
   // Debug effect to log state changes
-  // Debug effect to log state changes - only in development
   useEffect(() => {
     if (process.env.NODE_ENV === 'development') {
       console.log('Room state in hook:', {

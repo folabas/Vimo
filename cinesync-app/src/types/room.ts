@@ -26,6 +26,7 @@ export interface RoomState {
   subtitlesEnabled: boolean;
   isPrivate?: boolean;
   expiresAt?: string; // ISO date string for room expiration
+  isWaiting?: boolean; // Indicates if the room is waiting for participants
 }
 
 export interface Message {

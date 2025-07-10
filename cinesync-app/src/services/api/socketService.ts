@@ -85,19 +85,28 @@ export class SocketService {
   /**
    * Initialize the socket connection
    */
-  initialize(): Promise<void> {
+  async initialize(): Promise<void> {
     // Return existing connection promise if already connecting
     if (this.connectionPromise) return this.connectionPromise;
     
     // Return resolved promise if already connected
-    if (this.socket && this.socket.connected) {
+    if (this.socket?.connected) {
       return Promise.resolve();
+    }
+    
+    // Ensure we have a valid token
+    const token = getToken();
+    if (!token) {
+      throw new Error('No authentication token found. Please log in first.');
     }
     
     this.connectionPromise = new Promise((resolve, reject) => {
       this.isConnecting = true;
       
-      const token = getToken();
+      // Disconnect existing socket if any
+      if (this.socket) {
+        this.socket.disconnect();
+      }
       if (!token) {
         this.isConnecting = false;
         this.connectionPromise = null;
@@ -107,19 +116,23 @@ export class SocketService {
       const BASE_URL = process.env.REACT_APP_SOCKET_URL || 'http://localhost:5000';
       
       // Configure socket options with fallback to polling if WebSocket fails
-      this.socket = io(BASE_URL, {
-        auth: {
-          token,
-        },
-        transports: ['websocket', 'polling'],
+      console.log('[SocketService] Connecting to WebSocket with token:', token ? 'token exists' : 'no token');
+      
+      this.socket = io(process.env.REACT_APP_API_URL || 'http://localhost:5000', {
+        auth: { token },
+        transports: ['websocket'],
+        reconnection: true,
         reconnectionAttempts: 5,
         reconnectionDelay: 1000,
-        timeout: 10000
+        timeout: 10000,
+        query: { token }, // Also include token in query params for compatibility
+        autoConnect: true,
+        forceNew: true
       });
       
+      // Debug connection events
       this.socket.on('connect', () => {
-        console.log('[SocketService] Connected to server, socket id:', this.socket?.id);
-        this.isConnecting = false;
+        console.log('[SocketService] Connected to WebSocket');
         resolve();
       });
       
@@ -300,12 +313,12 @@ export class SocketService {
     // Make sure we have all required fields for the Movie type
     // This ensures we send a complete object to the server, which will then
     // be properly reflected in the ROOM_STATE_UPDATE events
+    const source = movie.source || movie.videoUrl || '';
     const fullMovie = {
       id: movie.id || `movie-${Date.now()}`,
       title: movie.title || 'Untitled',
-      source: movie.source || '',
-      // Include videoUrl field to ensure server can map it properly
-      videoUrl: movie.source || '',
+      source: source,
+      videoUrl: source,  // Use the same source for both fields
       thumbnail: movie.thumbnail || '',
       duration: movie.duration || '00:00'
     };
