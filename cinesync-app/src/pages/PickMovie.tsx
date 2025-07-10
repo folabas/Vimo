@@ -73,7 +73,7 @@ const sampleMovies = [
 
 const PickMovie: React.FC = () => {
   const navigate = useNavigate();
-  const {  } = useRoom();
+  useRoom(); // Using the hook for its side effects
   const {
     selectedMovie,
     isPrivate,

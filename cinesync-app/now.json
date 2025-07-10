@@ -10,7 +10,8 @@
     }
   ],
   "routes": [
+    { "handle": "filesystem" },
     { "src": "/static/(.*)", "dest": "/static/$1" },
-    { "src": "/(.*)", "status": 200, "dest": "/index.html" }
+    { "src": "/(.*)", "dest": "/" }
   ]
 }

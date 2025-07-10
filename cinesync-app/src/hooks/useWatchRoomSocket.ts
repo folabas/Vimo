@@ -70,9 +70,7 @@ export const useWatchRoomSocket = ({
   const [isPlaying, setIsPlaying] = useState(initialRoomState.isPlaying);
   const [currentTime, setCurrentTime] = useState(initialRoomState.currentTime);
   
-  // Refs to track component mounted state and for cleanup
-  const isMountedRef = useRef(true);
-  const controllerRef = useRef(new AbortController());
+  // Refs for cleanup
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const handleRoomStateUpdate = useCallback((newState: RoomState) => {
@@ -327,12 +325,15 @@ export const useWatchRoomSocket = ({
   }, [roomCode, setupRoom, leaveRoom, handleParticipantJoined, handleParticipantLeft]);
 
   // Debug effect to log state changes
+  // Debug effect to log state changes - only in development
   useEffect(() => {
-    console.log('Room state in hook:', {
-      roomState,
-      isPlaying
-    });
-  }, [roomState, isPlaying]);
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Room state in hook:', {
+        roomState,
+        isPlaying
+      });
+    }
+  }, [roomState, isPlaying]); // Added isPlaying to dependencies
 
   return {
     roomState,

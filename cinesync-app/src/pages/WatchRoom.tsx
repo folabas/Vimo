@@ -89,42 +89,38 @@ const WatchRoom: React.FC<Props> = () => {
   const webrtcServiceRef = useRef<WebRTCService | null>(null);
   const lastSyncTimeRef = useRef<number>(0);
   const [isWebRTCReady, setIsWebRTCReady] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
 
-  // Initialize WebRTC
-  useEffect(() => {
-    if (!roomCode) return;
+  // Define the sync message handler
+  const handleSyncMessage = useCallback((message: any) => {
+    // Using server timestamp from message instead of local time for consistency
+    if (message.timestamp <= lastSyncTimeRef.current) return;
+    
+    lastSyncTimeRef.current = message.timestamp;
 
-    const initializeWebRTC = async () => {
-      try {
-        const webrtcService = new WebRTCService(socketService);
-        await webrtcService.initialize(roomState.isHost);
-        
-        webrtcService.setOnSyncCallback((message) => {
-          handleSyncMessage(message);
-        });
+    switch (message.type) {
+      case 'play':
+        emitPlay(message.time);
+        break;
+      case 'pause':
+        emitPause(message.time);
+        break;
+      case 'seek':
+        emitSeek(message.time);
+        break;
+      case 'sync':
+        // Handle periodic sync if needed
+        break;
+      default:
+        break;
+    }
+  }, [emitPlay, emitPause, emitSeek]);
 
-        webrtcServiceRef.current = webrtcService;
-
-        // Set up WebRTC event listeners
-        setupWebRTCEventListeners(webrtcService);
-        
-        setIsWebRTCReady(true);
-      } catch (error) {
-        console.error('Error initializing WebRTC:', error);
-      }
-    };
-
-    initializeWebRTC();
-
-    return () => {
-      webrtcServiceRef.current?.cleanup();
-    };
-  }, [roomCode, roomState.isHost]);
-
-  // Set up WebRTC event listeners
-  const setupWebRTCEventListeners = (webrtcService: WebRTCService) => {
+  // Set up WebRTC event listeners - wrapped in useCallback to prevent recreation on every render
+  const setupWebRTCEventListeners = useCallback((webrtcService: WebRTCService) => {
     // Handle incoming offers
-    socketService.onOffer(async ({ offer, from }) => {
+    const handleOffer = async ({ offer, from }: { offer: RTCSessionDescriptionInit; from: string }) => {
       if (roomState.isHost) return; // Host doesn't handle offers
 
       try {
@@ -133,10 +129,10 @@ const WatchRoom: React.FC<Props> = () => {
       } catch (error) {
         console.error('Error handling offer:', error);
       }
-    });
+    };
 
     // Handle answers
-    socketService.onAnswer(async ({ answer, from }) => {
+    const handleAnswer = async ({ answer, from }: { answer: RTCSessionDescriptionInit; from: string }) => {
       if (!roomState.isHost) return; // Only host handles answers
 
       try {
@@ -144,47 +140,74 @@ const WatchRoom: React.FC<Props> = () => {
       } catch (error) {
         console.error('Error handling answer:', error);
       }
-    });
+    };
 
     // Handle ICE candidates
-    socketService.onIceCandidate(async ({ candidate, from }) => {
+    const handleIceCandidate = async ({ candidate, from }: { candidate: RTCIceCandidateInit; from: string }) => {
       try {
-        // Create a new RTCIceCandidate from the candidate data
         const iceCandidate = new RTCIceCandidate(candidate);
         await webrtcService.addIceCandidate(iceCandidate);
       } catch (error) {
         console.error('Error adding ICE candidate:', error);
       }
-    });
-  };
+    };
 
-  // Handle sync messages from WebRTC data channel
-  const handleSyncMessage = useCallback((message: any) => {
-    const now = Date.now();
-    
-    // Prevent processing old messages
-    if (message.timestamp <= lastSyncTimeRef.current) return;
-    
-    lastSyncTimeRef.current = message.timestamp;
+    // Set up event listeners
+    socketService.onOffer(handleOffer);
+    socketService.onAnswer(handleAnswer);
+    socketService.onIceCandidate(handleIceCandidate);
 
-    switch (message.type) {
-      case 'play':
-        emitPlay(message.currentTime);
-        break;
+    // Cleanup function
+    return () => {
+      socketService.off('offer', handleOffer);
+      socketService.off('answer', handleAnswer);
+      socketService.off('ice-candidate', handleIceCandidate);
+    };
+  }, [roomState.isHost]);
+
+  // Initialize WebRTC
+  useEffect(() => {
+    if (!roomCode) return;
+
+    const initializeWebRTC = async () => {
+      try {
+        const webrtcService = new WebRTCService(socketService);
         
-      case 'pause':
-        emitPause(message.currentTime);
-        break;
+        // Set up data channel for sync messages
+        await webrtcService.initialize(roomState.isHost);
         
-      case 'seek':
-        emitSeek(message.currentTime);
-        break;
+        // Set up sync message handler
+        webrtcService.setOnSyncCallback(handleSyncMessage);
+
+        webrtcServiceRef.current = webrtcService;
         
-      case 'sync':
-        // Handle periodic sync if needed
-        break;
-    }
-  }, [emitPlay, emitPause, emitSeek]);
+        // Set up WebRTC event listeners
+        const cleanupListeners = setupWebRTCEventListeners(webrtcService);
+        
+        setIsWebRTCReady(true);
+
+        // Cleanup function
+        return () => {
+          if (cleanupListeners) cleanupListeners();
+          webrtcService.cleanup();
+        };
+      } catch (error) {
+        console.error('Error initializing WebRTC:', error);
+      }
+    };
+
+    initializeWebRTC();
+
+    // Cleanup function for the effect
+    return () => {
+      if (webrtcServiceRef.current) {
+        webrtcServiceRef.current.cleanup();
+        webrtcServiceRef.current = null;
+      }
+    };
+  }, [roomCode, roomState.isHost, handleSyncMessage, setupWebRTCEventListeners]);
+
+
 
   // Type-safe handlers for VideoPlayer props
   const handlePlay = (currentTime: number) => {

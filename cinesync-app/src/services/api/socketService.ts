@@ -36,21 +36,7 @@ export enum SocketEvents {
   ICE_CANDIDATE = 'ice-candidate'
 }
 
-// Types for WebRTC signaling
-type OfferData = {
-  offer: RTCSessionDescriptionInit;
-  to: string;
-};
-
-type AnswerData = {
-  answer: RTCSessionDescriptionInit;
-  to: string;
-};
-
-type IceCandidateData = {
-  candidate: RTCIceCandidateInit;
-  to: string;
-};
+// WebRTC signaling types are defined where they are used
 
 // Socket service singleton
 export class SocketService {
