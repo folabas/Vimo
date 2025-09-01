@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
 
 const UserSchema = new mongoose.Schema({
+  
   username: {
     type: String,
     required: true,
@@ -65,6 +66,30 @@ UserSchema.pre('save', async function(next) {
 UserSchema.methods.comparePassword = async function(candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
+
+// Virtual for getting the id as a string
+UserSchema.virtual('id').get(function() {
+  return this._id.toHexString();
+});
+
+// Set schema options to include virtuals in JSON output
+UserSchema.set('toJSON', {
+  virtuals: true,
+  transform: function(doc, ret) {
+    delete ret._id;
+    delete ret.__v;
+    delete ret.password;
+  }
+});
+
+UserSchema.set('toObject', {
+  virtuals: true,
+  transform: function(doc, ret) {
+    delete ret._id;
+    delete ret.__v;
+    delete ret.password;
+  }
+});
 
 const User = mongoose.model('User', UserSchema);
 

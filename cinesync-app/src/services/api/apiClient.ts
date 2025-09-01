@@ -6,7 +6,7 @@ const getToken = (): string | null => {
   return localStorage.getItem('vimo_auth_token');
 };
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+const API_BASE_URL = process.env.REACT_APP_API_URL ? `${process.env.REACT_APP_API_URL}/api` : 'http://localhost:5000/api';
 
 /**
  * Base API client for making HTTP requests to the backend
@@ -33,11 +33,29 @@ export const apiClient = {
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       method: 'GET',
       headers,
+      credentials: 'include',
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Something went wrong');
+      const error = await response.json().catch(() => ({}));
+      const errorMessage = error.message || `HTTP error! status: ${response.status}`;
+      
+      console.error('API Error:', {
+        status: response.status,
+        statusText: response.statusText,
+        endpoint,
+        error
+      });
+
+      // Handle token expiration
+      if (response.status === 401 && error.message === 'Token expired') {
+        // Clear the expired token
+        localStorage.removeItem('vimo_auth_token');
+        // You might want to redirect to login page here
+        window.location.href = '/login';
+      }
+
+      throw new Error(errorMessage);
     }
 
     return response.json();
@@ -66,11 +84,29 @@ export const apiClient = {
       method: 'POST',
       headers,
       body: JSON.stringify(data),
+      credentials: 'include',
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Something went wrong');
+      const error = await response.json().catch(() => ({}));
+      const errorMessage = error.message || `HTTP error! status: ${response.status}`;
+      
+      console.error('API Error:', {
+        status: response.status,
+        statusText: response.statusText,
+        endpoint,
+        error
+      });
+
+      // Handle token expiration
+      if (response.status === 401 && error.message === 'Token expired') {
+        // Clear the expired token
+        localStorage.removeItem('vimo_auth_token');
+        // You might want to redirect to login page here
+        window.location.href = '/login';
+      }
+
+      throw new Error(errorMessage);
     }
 
     return response.json();

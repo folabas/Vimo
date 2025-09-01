@@ -21,7 +21,7 @@ export const register = async (
   password: string
 ): Promise<{ user: User }> => {
   const response = await apiClient.post<{ user: User }>(
-    '/api/auth/register',
+    '/auth/register',
     { username, email, password },
     false
   );
@@ -40,7 +40,7 @@ export const login = async (
   password: string
 ): Promise<{ user: User }> => {
   const response = await apiClient.post<{ user: User }>(
-    '/api/auth/login',
+    '/auth/login',
     { email, password },
     false
   );
@@ -55,7 +55,7 @@ export const login = async (
 export const logout = async (): Promise<void> => {
   try {
     // The second parameter is the request body (empty object) and the third is for options
-    await apiClient.post('/api/auth/logout', {}, false);
+    await apiClient.post('/auth/logout', {}, false);
   } catch (error) {
     console.error('Logout error:', error);
     // Even if the request fails, we still want to clear the local state
@@ -64,15 +64,27 @@ export const logout = async (): Promise<void> => {
 
 /**
  * Get the current user from the server
- * @returns Promise with the current user or null if not authenticated
+ * @returns Promise with the current user
+ * @throws {Error} If there's an error fetching the user
  */
-export const getCurrentUser = async (): Promise<User | null> => {
+export const getCurrentUser = async (): Promise<User> => {
+  const token = localStorage.getItem('vimo_auth_token');
+  if (!token) {
+    throw new Error('No token, authorization denied');
+  }
+
   try {
-    const response = await apiClient.get<{ user: User | null }>('/api/auth/user');
+    const response = await apiClient.get<{ user: User }>('/auth/user');
+    if (!response.user) {
+      throw new Error('User not found');
+    }
     return response.user;
-  } catch (error) {
-    console.error('Failed to fetch current user:', error);
-    return null;
+  } catch (error: unknown) {
+    if (error instanceof Error) {
+      console.error('Failed to fetch current user:', error.message);
+      throw error;
+    }
+    throw new Error('Failed to fetch current user');
   }
 };
 
@@ -81,10 +93,22 @@ export const getCurrentUser = async (): Promise<User | null> => {
  * @returns Promise that resolves to true if user is authenticated
  */
 export const isAuthenticated = async (): Promise<boolean> => {
+  const token = localStorage.getItem('vimo_auth_token');
+  // If there's no token, we're definitely not authenticated
+  if (!token) {
+    return false;
+  }
+  
   try {
     const user = await getCurrentUser();
     return !!user;
-  } catch (error) {
+  } catch (error: unknown) {
+    // If we get a 401, clear the invalid token
+    if (error instanceof Error && 
+        (error.message === 'No token, authorization denied' || 
+         error.message === 'Token expired')) {
+      localStorage.removeItem('vimo_auth_token');
+    }
     return false;
   }
 };

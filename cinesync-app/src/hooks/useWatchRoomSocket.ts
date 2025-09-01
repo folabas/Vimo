@@ -1,4 +1,8 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { Socket } from 'socket.io-client';
+import { isAuthenticated } from '../services/api/authService';
+import { socketService, SocketEvents } from '../services/api/socketService';
+import { RoomState, Message, Participant, Movie } from '../types/room';
 
 /**
  * Normalizes a movie object to ensure it has all required fields and HTTPS URLs
@@ -35,10 +39,6 @@ const normalizeMovie = (movie?: Movie | null): Movie | null => {
     duration: movie.duration || '00:00',
   };
 };
-import { Socket } from 'socket.io-client';
-import { isAuthenticated } from '../services/api/authService';
-import { socketService, SocketEvents } from '../services/api/socketService';
-import { RoomState, Message, Participant, Movie } from '../types/room';
 
 // Type for playback control events
 interface PlaybackEvent {

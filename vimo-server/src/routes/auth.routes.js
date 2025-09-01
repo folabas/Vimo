@@ -99,7 +99,7 @@ router.post('/login', async (req, res) => {
 });
 
 // Get current user
-router.get('/me', async (req, res) => {
+router.get('/user', async (req, res) => {
   try {
     // Get token from header
     const token = req.header('x-auth-token');
@@ -118,10 +118,31 @@ router.get('/me', async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
     
-    res.json(user);
+    // Return user info in the expected format
+    res.json({
+      user: {
+        id: user.id,  // Using the virtual getter that maps _id to id
+        username: user.username,
+        email: user.email,
+        profilePicture: user.profilePicture
+      }
+    });
   } catch (error) {
     console.error('Auth error:', error);
-    res.status(401).json({ message: 'Token is not valid' });
+    if (error.name === 'JsonWebTokenError') {
+      return res.status(401).json({ message: 'Invalid token' });
+    }
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({ 
+        message: 'Token expired',
+        expiredAt: error.expiredAt
+      });
+    }
+    console.error('Server error:', error);
+    res.status(500).json({ 
+      message: 'Server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 

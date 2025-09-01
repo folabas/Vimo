@@ -27,13 +27,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [error, setError] = useState<string | null>(null);
 
   const checkAuth = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
       const authenticated = await isAuthenticated();
       if (authenticated) {
-        const currentUser = await getCurrentUser();
-        setUser(currentUser);
-        setIsLoggedIn(true);
+        try {
+          const currentUser = await getCurrentUser();
+          setUser(currentUser);
+          setIsLoggedIn(true);
+        } catch (err) {
+          console.error('Failed to get current user:', err);
+          setUser(null);
+          setIsLoggedIn(false);
+        }
       } else {
         setUser(null);
         setIsLoggedIn(false);
