@@ -1,4 +1,4 @@
-import React, { createContext, useState, ReactNode } from 'react';
+import React, { createContext, useState, useEffect, ReactNode } from 'react';
 import { User, register as apiRegister, login as apiLogin, logout as apiLogout, getCurrentUser, isAuthenticated } from '../services/api/authService';
 
 interface AuthContextType {
@@ -20,32 +20,18 @@ interface AuthProviderProps {
 }
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
-  // Initialize state directly from localStorage to avoid useEffect
-  const initialAuthCheck = () => {
-    if (isAuthenticated()) {
-      return {
-        user: getCurrentUser(),
-        isLoggedIn: true,
-        loading: false
-      };
-    }
-    return {
-      user: null,
-      isLoggedIn: false,
-      loading: false
-    };
-  };
-
-  const initialState = initialAuthCheck();
-  const [user, setUser] = useState<User | null>(initialState.user);
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(initialState.isLoggedIn);
-  const [loading, setLoading] = useState<boolean>(initialState.loading);
+  // Initialize state
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const checkAuth = () => {
+  const checkAuth = async () => {
     try {
-      if (isAuthenticated()) {
-        const currentUser = getCurrentUser();
+      setLoading(true);
+      const authenticated = await isAuthenticated();
+      if (authenticated) {
+        const currentUser = await getCurrentUser();
         setUser(currentUser);
         setIsLoggedIn(true);
       } else {
@@ -54,8 +40,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
     } catch (err) {
       console.error('Auth check error:', err);
+      setUser(null);
+      setIsLoggedIn(false);
+    } finally {
+      setLoading(false);
     }
   };
+
+  // Initial auth check on mount
+  useEffect(() => {
+    checkAuth();
+  }, []);
 
   const register = async (username: string, email: string, password: string) => {
     setLoading(true);
