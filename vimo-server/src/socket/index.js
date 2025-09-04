@@ -423,6 +423,47 @@ function initializeSocket(server) {
         socket.emit('error', { message: 'Only the host can control playback.' });
       }
     });
+
+    // Handle video change
+    socket.on('change-video', async ({ roomCode, videoId }) => {
+      if (await isRoomHost(roomCode, socket.user.id)) {
+        try {
+          // Update room with new video
+          await Room.updateOne(
+            { roomCode },
+            { 
+              $set: { 
+                'movie.id': videoId,
+                currentTime: 0,
+                isPlaying: true,
+                lastActivity: Date.now()
+              }
+            }
+          );
+          
+          // Notify all clients in the room about the video change
+          io.to(roomCode).emit('video-changed', { 
+            videoId,
+            changedBy: {
+              userId: socket.user.id,
+              username: socket.user.username
+            },
+            timestamp: Date.now()
+          });
+          
+          console.log(`${socket.user.username} changed video to ${videoId} in room ${roomCode}`);
+          
+          // Start playback sync with the new video
+          startPlaybackSync(roomCode);
+          
+        } catch (error) {
+          console.error('Error changing video:', error);
+          socket.emit('error', { message: 'Failed to change video' });
+        }
+      } else {
+        socket.emit('error', { message: 'Only the host can change the video.' });
+      }
+    });
     // --- End playback synchronization handlers ---
     
     // Play video

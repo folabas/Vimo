@@ -1,0 +1,272 @@
+/* Main container */
+.pageContainer {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header styles */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.headerLeft,
+.headerRight {
+  flex: 1;
+}
+
+.headerLeft {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.headerRight {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.pageTitle {
+  font-size: 1.8rem;
+  font-weight: 600;
+  color: #333;
+  margin: 0;
+}
+
+/* Back button */
+.backButton {
+  text-transform: none !important;
+  font-weight: 500 !important;
+  color: #666 !important;
+  border-color: #ddd !important;
+}
+
+.backButton:hover {
+  border-color: #999 !important;
+  background-color: #f5f5f5 !important;
+}
+
+/* Main content */
+.mainContent {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+/* Movie section */
+.movieSection {
+  margin-bottom: 2rem;
+}
+
+.sectionTitle {
+  font-size: 1.4rem;
+  margin-bottom: 1rem;
+  color: #444;
+}
+
+/* Movie grid */
+.movieGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1.5rem;
+  margin-top: 1rem;
+}
+
+/* Movie card */
+.movieCard {
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s, box-shadow 0.2s;
+  cursor: pointer;
+  background: white;
+}
+
+.movieCard:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.movieCard.selected {
+  outline: 3px solid #3f51b5;
+}
+
+.movieThumbnail {
+  position: relative;
+  padding-top: 56.25%; /* 16:9 aspect ratio */
+  background: #f5f5f5;
+}
+
+.thumbnailImage {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.durationBadge {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
+.movieInfo {
+  padding: 0.8rem;
+}
+
+.movieTitle {
+  font-size: 1rem;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Options section */
+.optionsSection {
+  background: #f9f9f9;
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin: 1rem 0;
+}
+
+.optionRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 0;
+  border-bottom: 1px solid #eee;
+}
+
+.optionRow:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.optionText {
+  flex: 1;
+}
+
+.optionLabel {
+  font-size: 1rem;
+  margin: 0 0 0.25rem 0;
+  color: #333;
+}
+
+.optionDescription {
+  margin: 0;
+  font-size: 0.875rem;
+  color: #666;
+}
+
+/* Toggle switch */
+.toggleSwitch {
+  position: relative;
+  display: inline-block;
+  width: 50px;
+  height: 26px;
+  margin-left: 1rem;
+}
+
+.toggleInput {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggleSlider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ccc;
+  transition: .4s;
+  border-radius: 34px;
+}
+
+.toggleSlider:before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 4px;
+  bottom: 4px;
+  background-color: white;
+  transition: .4s;
+  border-radius: 50%;
+}
+
+.toggleInput:checked + .toggleSlider {
+  background-color: #3f51b5;
+}
+
+.toggleInput:focus + .toggleSlider {
+  box-shadow: 0 0 1px #3f51b5;
+}
+
+.toggleInput:checked + .toggleSlider:before {
+  transform: translateX(24px);
+}
+
+/* Action buttons */
+.actionButtons {
+  display: flex;
+  gap: 1rem;
+  margin-top: 2rem;
+  justify-content: center;
+}
+
+.createButton {
+  min-width: 180px !important;
+  height: 48px !important;
+  font-weight: 500 !important;
+  text-transform: none !important;
+}
+
+.fileInput {
+  display: none;
+}
+
+.uploadButton {
+  display: inline-flex;
+}
+
+.uploadButtonInner {
+  min-width: 150px !important;
+  height: 48px !important;
+  text-transform: none !important;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .movieGrid {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  }
+  
+  .actionButtons {
+    flex-direction: column;
+    gap: 1rem;
+  }
+  
+  .createButton,
+  .uploadButtonInner {
+    width: 100% !important;
+  }
+}
