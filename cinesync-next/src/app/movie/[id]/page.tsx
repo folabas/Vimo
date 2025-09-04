@@ -16,8 +16,9 @@ interface MoviePageProps {
   params: { id: string };
 }
 
-export default function MoviePage({ params }: { params: { id: string } }) {
-  const movieId = parseInt(params.id, 10);
+export default async function MoviePage({ params }: { params: { id: string } }) {
+  const resolvedParams = await params;
+  const movieId = parseInt(resolvedParams.id, 10);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [movieData, setMovieData] = useState<{

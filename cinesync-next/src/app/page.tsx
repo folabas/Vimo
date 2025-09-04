@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { 
   Container, 
@@ -27,15 +27,15 @@ type MovieCategory = 'popular' | 'top_rated' | 'upcoming';
 export default function Home() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
-  const [movies, setMovies] = useState<Movie[]>([]);
+  const [allMovies, setAllMovies] = useState<Movie[]>([]);
+  const [visibleMovies, setVisibleMovies] = useState<Movie[]>([]);
+  const [visibleCount, setVisibleCount] = useState<number>(12);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [activeCategory, setActiveCategory] = useState<MovieCategory>('popular');
   const [page, setPage] = useState<number>(1);
   const [hasMore, setHasMore] = useState<boolean>(true);
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const observer = useRef<IntersectionObserver | null>(null);
-  const loadMoreRef = useRef<HTMLDivElement>(null);
 
   // Fetch movies based on category or search query
   const fetchMovies = useCallback(async (category: MovieCategory = 'popular', pageNum: number = 1) => {
@@ -62,7 +62,14 @@ export default function Home() {
         }
       }
 
-      setMovies(prev => pageNum === 1 ? response.results : [...prev, ...response.results]);
+      if (pageNum === 1) {
+        setAllMovies(response.results);
+        setVisibleMovies(response.results.slice(0, 12));
+      } else {
+        const newMovies = [...allMovies, ...response.results];
+        setAllMovies(newMovies);
+        setVisibleMovies(newMovies.slice(0, visibleCount));
+      }
       setHasMore(pageNum < response.total_pages);
       setPage(pageNum);
     } catch (error) {
@@ -82,9 +89,23 @@ export default function Home() {
     return () => clearTimeout(timer);
   }, [searchQuery, activeCategory]);
 
-  // Initial fetch
+  // Update visible movies when visibleCount changes
   useEffect(() => {
-    fetchMovies(activeCategory);
+    setVisibleMovies(allMovies.slice(0, visibleCount));
+  }, [visibleCount, allMovies]);
+
+  // Reset movies when search query or category changes
+  useEffect(() => {
+    setAllMovies([]);
+    setVisibleMovies([]);
+    setVisibleCount(12);
+    setPage(1);
+    setHasMore(true);
+  }, [searchQuery, activeCategory]);
+
+  // Initial fetch and handle tab changes
+  useEffect(() => {
+    fetchMovies(activeCategory, 1);
   }, [activeCategory]);
 
   // Handle tab change
@@ -93,35 +114,16 @@ export default function Home() {
     setSearchQuery('');
   };
 
-  // Set up intersection observer for infinite scroll
-  useEffect(() => {
-    if (!hasMore || isLoading) return;
-
-    const handleObserver = (entries: IntersectionObserverEntry[]) => {
-      const target = entries[0];
-      if (target.isIntersecting) {
-        fetchMovies(activeCategory as MovieCategory, page + 1);
-      }
-    };
-
-    const options = {
-      root: null,
-      rootMargin: '20px',
-      threshold: 0.1,
-    };
-
-    observer.current = new IntersectionObserver(handleObserver, options);
-
-    if (loadMoreRef.current) {
-      observer.current.observe(loadMoreRef.current);
+  // Load more movies function
+  const loadMoreMovies = () => {
+    const newCount = visibleCount + 20;
+    setVisibleCount(newCount);
+    
+    // If we're close to the end of loaded movies, fetch more
+    if (newCount >= allMovies.length - 5 && hasMore && !isLoading) {
+      setPage(prevPage => prevPage + 1);
     }
-
-    return () => {
-      if (observer.current && loadMoreRef.current) {
-        observer.current.unobserve(loadMoreRef.current);
-      }
-    };
-  }, [fetchMovies, hasMore, isLoading, page, activeCategory]);
+  };
 
   return (
     <Container maxWidth="xl" sx={{ py: 4 }}>
@@ -202,8 +204,8 @@ export default function Home() {
           ))
         ) : (
           // Movie cards
-          movies.map((movie) => (
-            <Box key={movie.id}>
+          visibleMovies.map((movie, index) => (
+            <Box key={`${movie.id}-${index}`}>
               <Link href={`/movie/${movie.id}`} style={{ textDecoration: 'none' }}>
                 <Box 
                   sx={{
@@ -327,17 +329,29 @@ export default function Home() {
         )}
       </Box>
 
-      {/* Infinite scroll target */}
-      <div ref={loadMoreRef} style={{ height: '20px', margin: '10px 0' }}>
-        {isLoading && (
-          <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
-            <CircularProgress size={24} />
-          </Box>
-        )}
-      </div>
+      {/* Show More Button */}
+      {!loading && allMovies.length > 0 && visibleCount < allMovies.length && (
+        <Box display="flex" justifyContent="center" my={4}>
+          <Button 
+            variant="outlined" 
+            onClick={loadMoreMovies}
+            disabled={isLoading}
+            endIcon={isLoading ? <CircularProgress size={20} /> : null}
+          >
+            Show More
+          </Button>
+        </Box>
+      )}
+
+      {/* Loading indicator for initial load */}
+      {isLoading && visibleCount <= 12 && (
+        <Box display="flex" justifyContent="center" my={4}>
+          <CircularProgress />
+        </Box>
+      )}
 
       {/* Empty State */}
-      {!loading && movies.length === 0 && (
+      {!loading && allMovies.length === 0 && (
         <Box sx={{ textAlign: 'center', py: 8 }}>
           <Typography variant="h6" color="text.secondary">
             {searchQuery
